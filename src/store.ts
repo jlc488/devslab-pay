@@ -91,7 +91,7 @@ export class PayStore {
  private validateImport(scope:PayScope,input:ImportInput){
   validateScope(scope);if(scope.access!=='company')throw new PayError(403,'service_access_required','Administrative import access is required.');
   text(input.migrationId);text(input.generation);if(!/^[a-f0-9]{64}$/.test(input.digest))throw conflict();
-  const o=object(input.order);exactKeys(o,['id','company_id','user_id','provider_order_id','idempotency_key','supply_krw','vat_krw','total_krw','currency','mode','state','payment_key','refund_reason','revision','created_at','updated_at','provenance'],['notify_workspace_id']);
+  const o=object(input.order);exactKeys(o,['id','company_id','user_id','provider_order_id','idempotency_key','supply_krw','vat_krw','total_krw','currency','mode','state','payment_key','refund_reason','revision','created_at','updated_at','provenance'],['notify_workspace_id','provider_refund_id']);
   const amounts=calculateRecharge(o.supply_krw),provenance=object(o.provenance);exactKeys(provenance,['source','table','quiescentMarker']);
   if(o.company_id!==scope.companyId)throw invalid();
   if(o.mode!=='sandbox'||provenance.source!=='admin'||provenance.table!=='messaging_test_payment_orders')throw invalid();
@@ -100,6 +100,7 @@ export class PayStore {
   for(const k of ['id','user_id','provider_order_id','idempotency_key'])text(o[k]);
   if(o.payment_key!==null)text(o.payment_key);if(o.refund_reason!==null)text(o.refund_reason);
   if(o.state!=='created'&&o.payment_key===null)throw invalid();if(String(o.state).startsWith('refund')&&o.refund_reason===null)throw invalid();
+  if(o.provider_refund_id!==undefined&&o.provider_refund_id!==null){text(o.provider_refund_id,64);if(!['refund_pending','refund_unknown','refunded'].includes(String(o.state))||o.refund_reason===null||o.payment_key===null)throw invalid();}
   utc(o.created_at);utc(o.updated_at);if(String(o.updated_at)<String(o.created_at))throw invalid();
   validateSnapshots(scope,input.connection,input.ledger);if(o.notify_workspace_id!==input.ledger.workspaceId)throw conflict();
  }
@@ -115,7 +116,7 @@ export class PayStore {
   const prior=await this.importReplay(scope,input);if(prior)return prior;
   const {migrationId,generation,order:o,connection:c,ledger:l}=input;
   const fp=await this.snapshots(scope,c,l,f),now=this.timestamp();
-  const row:OrderRow={id:o.id,company_id:o.company_id,user_id:o.user_id,provider_order_id:o.provider_order_id,idempotency_key:o.idempotency_key,environment:'test',purpose:'messaging_recharge',provider:'toss',supply_krw:o.supply_krw,vat_krw:o.vat_krw,total_krw:o.total_krw,currency:'KRW',state:o.state,payment_key:o.payment_key,refund_reason:o.refund_reason,provider_refund_id:null,connection_json:canonical(c),ledger_json:canonical(l),provider_fingerprint:fp.provider,ledger_fingerprint:fp.ledger,origin:'legacy',legacy_mode:'sandbox',provenance_json:canonical(o.provenance),revision:o.revision,created_at:o.created_at,updated_at:o.updated_at};
+  const row:OrderRow={id:o.id,company_id:o.company_id,user_id:o.user_id,provider_order_id:o.provider_order_id,idempotency_key:o.idempotency_key,environment:'test',purpose:'messaging_recharge',provider:'toss',supply_krw:o.supply_krw,vat_krw:o.vat_krw,total_krw:o.total_krw,currency:'KRW',state:o.state,payment_key:o.payment_key,refund_reason:o.refund_reason,provider_refund_id:o.provider_refund_id??null,connection_json:canonical(c),ledger_json:canonical(l),provider_fingerprint:fp.provider,ledger_fingerprint:fp.ledger,origin:'legacy',legacy_mode:'sandbox',provenance_json:canonical(o.provenance),revision:o.revision,created_at:o.created_at,updated_at:o.updated_at};
   try{await this.db.batch([this.insert(row),this.db.prepare("INSERT INTO payment_imports(order_id,migration_id,generation,digest,source_json,status,created_at,updated_at) VALUES(?,?,?,?,?,'staged',?,?)").bind(o.id,migrationId,generation,input.digest,canonical({migrationId,generation,order:o,connection:c,ledger:l}),now,now)]);}catch(error){
    const raced=await this.db.prepare('SELECT * FROM payment_imports WHERE order_id=?').bind(o.id).first<ImportRow>();
    if(raced&&raced.migration_id===migrationId&&raced.generation===generation&&raced.digest===input.digest)return receipt(raced);unique(error);
@@ -155,14 +156,15 @@ export class PayStore {
  private captureResult(row:NonceRow):CheckoutCaptureResult{return {returnTarget:row.return_target,companyId:row.company_id,id:row.order_id,result:row.result==='pending'?'unknown':row.result};}
  async checkoutStatus(stateHash:string):Promise<CheckoutCaptureResult>{
   if(typeof stateHash!=='string'||!/^[a-f0-9]{64}$/.test(stateHash))throw invalid();
-  const row=await this.db.prepare('SELECT * FROM checkout_nonces WHERE state_hash=?').bind(stateHash).first<NonceRow>();if(!row)throw missing();return this.captureResult(row);
+  const row=await this.db.prepare('SELECT * FROM checkout_nonces WHERE state_hash=?').bind(stateHash).first<NonceRow>();if(!row)throw missing();if(row.result==='pending'&&this.now()>=Date.parse(row.expires_at))throw conflict();return this.captureResult(row);
  }
  async captureCheckout(callback:CheckoutCallback):Promise<CheckoutCaptureResult>{
-  const c=object(callback);if(c.outcome==='success')exactKeys(c,['outcome','state','paymentKey','orderId','amount']);else if(c.outcome==='fail')exactKeys(c,['outcome','state'],['code']);else throw invalid();
+  const c=object(callback);if(c.outcome==='success')exactKeys(c,['outcome','state','paymentKey','orderId','amount']);else if(c.outcome==='fail')exactKeys(c,['outcome','state'],['code','orderId']);else throw invalid();
   const hash=await checkoutStateHash(c.state as string),row=await this.db.prepare('SELECT * FROM checkout_nonces WHERE state_hash=?').bind(hash).first<NonceRow>();if(!row)throw missing();
   if(c.outcome==='success'){text(c.paymentKey);text(c.orderId);if(!Number.isSafeInteger(c.amount)||Number(c.amount)<=0)throw invalid();if(c.orderId!==row.provider_order_id||c.amount!==row.total_krw)throw conflict();}
+  if(c.outcome==='fail'&&c.orderId!==undefined){text(c.orderId);if(c.orderId!==row.provider_order_id)throw conflict();}
   if(c.code!==undefined)text(c.code,200);
-  const digest=await sha256(canonical(c.outcome==='success'?{outcome:'success',paymentKey:c.paymentKey,orderId:c.orderId,amount:c.amount}:{outcome:'fail'}));
+  const digest=await sha256(canonical(c.outcome==='success'?{outcome:'success',paymentKey:c.paymentKey,orderId:c.orderId,amount:c.amount}:{outcome:'fail',...(c.orderId!==undefined?{orderId:c.orderId}:{}),...(c.code!==undefined?{code:c.code}:{})}));
   if(row.result!=='pending'){if(row.callback_digest!==digest)throw conflict();return this.captureResult(row);}
   if(this.now()>=Date.parse(row.expires_at))throw conflict();
   const scope:PayScope={subject:row.subject,companyId:row.company_id,access:row.scope_access},order=await this.load(scope,row.order_id);

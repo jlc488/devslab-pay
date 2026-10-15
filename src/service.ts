@@ -37,7 +37,7 @@ export class PayApplication {
    const {action:_,...callback}=raw;return this.store.captureCheckout(callback as Extract<PayCommand,{action:'captureCheckoutCallback'}>);
   }
   if(raw.action==='checkoutCaptureStatus'){exactKeys(raw,['action','stateHash']);return this.store.checkoutStatus(raw.stateHash as string);}
-  const spec=typeof raw.action==='string'?fields[raw.action]:undefined;if(!spec)throw invalid();
+  const spec=typeof raw.action==='string'&&Object.hasOwn(fields,raw.action)?fields[raw.action]:undefined;if(!spec)throw invalid();
   exactKeys(raw,['action','scope',...spec.required],spec.optional);const scope=validateScope(raw.scope),c=command as ScopedPayCommand;
   switch(c.action){
    case 'inspectConnection':return inspectConnection(this.env,scope,c.connection);
@@ -71,8 +71,10 @@ export class PayApplication {
      text(c.paymentKey);if(c.orderId!==row.provider_order_id||c.amount!==row.total_krw||!Number.isSafeInteger(c.amount))throw conflict();
      if(row.payment_key&&row.payment_key!==c.paymentKey)throw conflict();
     }else if(!row.payment_key)throw conflict();
-    if(['credited','refund_pending','refund_unknown','refunded'].includes(row.state))return publicOrder(row);
+    const refundRecovery=c.action==='reconcileOrder'&&['refund_pending','refund_unknown'].includes(row.state);
+    if(!refundRecovery&&['credited','refund_pending','refund_unknown','refunded'].includes(row.state))return publicOrder(row);
     await checkEffectAuthority(effectAuthority);externalGate(this.env);const resolved=await this.saved(scope,row);
+    if(refundRecovery){if(!row.refund_reason)throw conflict();return publicOrder(await refundPayment(this.store,scope,row,row.refund_reason,paymentAdapters(this.env,scope,resolved,effectAuthority)));}
     if(c.action==='confirmOrder')row=await this.store.bindPayment(scope,row.id,c.paymentKey);
     return publicOrder(await confirmPayment(this.store,scope,row,paymentAdapters(this.env,scope,resolved,effectAuthority)));
    }

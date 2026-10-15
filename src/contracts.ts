@@ -12,7 +12,7 @@ export interface OrderPage {items:PublicOrder[];nextCursor:string|null}
 export interface LegacyPaymentOrder {
  id:string;company_id:string;user_id:string;provider_order_id:string;idempotency_key:string;
  supply_krw:number;vat_krw:number;total_krw:number;currency:'KRW';mode:'sandbox'|'simulation';state:PaymentState;
- payment_key:string|null;refund_reason:string|null;notify_workspace_id?:string;revision:number;created_at:string;updated_at:string;
+ payment_key:string|null;refund_reason:string|null;provider_refund_id?:string|null;notify_workspace_id?:string;revision:number;created_at:string;updated_at:string;
  provenance:{source:'admin';table:'messaging_test_payment_orders'|'messaging_payment_orders';quiescentMarker:string};
 }
 export interface OwnershipFence {migrationId:string;generation:string;digest:string}
@@ -39,7 +39,7 @@ export type ScopedPayCommand = Scoped & (
 );
 export interface CheckoutPreparation {companyId:string;id:string;mode:'test';provider:'toss';kind:'general-test';clientKey:string;customerKey:string;orderId:string;amount:{currency:'KRW';value:number};orderName:'DevsLab 문자 충전 테스트';successUrl:string;failUrl:string;expiresAt:string}
 export interface CheckoutCaptureResult {returnTarget:'contract'|'admin';companyId:string;id:string;result:'captured'|'failed'|'unknown'}
-export type CheckoutCallback = {outcome:'success';state:string;paymentKey:string;orderId:string;amount:number}|{outcome:'fail';state:string;code?:string};
+export type CheckoutCallback = {outcome:'success';state:string;paymentKey:string;orderId:string;amount:number}|{outcome:'fail';state:string;code?:string;orderId?:string};
 
 export type PayCommand = ScopedPayCommand|({action:'captureCheckoutCallback'} & CheckoutCallback)|{action:'checkoutCaptureStatus';stateHash:string};
 export interface ConnectionInspection {companyId:string;connectionId:string;revision:string;configured:boolean;fingerprint:string|null;reasonCode:string|null}
