@@ -6,7 +6,7 @@ No account ID, route, production D1 ID, service binding or secret is configured.
 
 ## Wire contract package
 
-The RPC types, error codes, pricing, formats, checkout callback URLs, import digest and response parsers are published as `@devslab-kr/pay-contract` from `packages/pay-contract` (see its README and CHANGELOG). Pay imports them from that package through the npm workspace, so Pay cannot serve a shape other than the one it publishes; Admin installs a pinned version instead of copying the file. The Worker stays at the repository root; the root is the npm workspace root. `.npmrc` maps the `@devslab-kr` scope to GitHub Packages, so `npm ci` needs `NODE_AUTH_TOKEN` (`read:packages`) set, e.g. `NODE_AUTH_TOKEN=$(gh auth token) npm ci`.
+The RPC types, error codes, pricing, formats, checkout callback URLs, import digest and response parsers are published as `@devslab-kr/pay-contract` from `packages/pay-contract` (see its README and CHANGELOG). Pay imports them from that package through the npm workspace, so Pay cannot serve a shape other than the one it publishes; Admin installs a pinned version instead of copying the file. `@devslab-kr/pay-ui` (`packages/pay-ui`) holds the presentational React components (recharge amount, order history, order summary, test wallet) that Admin and Contract assemble; it takes data typed with the contract and never fetches. The Worker stays at the repository root; the root is the npm workspace root. `.npmrc` maps the `@devslab-kr` scope to GitHub Packages, so `npm ci` needs `NODE_AUTH_TOKEN` (`read:packages`) set, e.g. `NODE_AUTH_TOKEN=$(gh auth token) npm ci`.
 
 ## Local commands
 
