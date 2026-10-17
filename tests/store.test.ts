@@ -3,7 +3,7 @@ import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {readFile} from 'node:fs/promises';
 import {URL as NodeURL} from 'node:url';
 import {PayStore,importDigest} from '../src/store';
-import type {PayScope,ConnectionSnapshot,LedgerSnapshot,LegacyPaymentOrder,OwnershipFence} from '../src/contracts';
+import type {PayScope,ConnectionSnapshot,LedgerSnapshot,LegacyPaymentOrder,OwnershipFence} from '@devslab-kr/pay-contract';
 import type {PaymentAdapters,PaymentGateway,PaymentLedger} from '../src/adapters';
 function boundaries(value:{gateway?:Partial<PaymentGateway>;ledger?:Partial<PaymentLedger>}):PaymentAdapters {
  const unexpected=async():Promise<never>=>{throw Error('Unexpected scripted boundary');};
@@ -116,4 +116,28 @@ describe('legacy cancellation proof import v1.7 (actual D1)',()=>{
 
 describe('private action allowlist prototype rejection',()=>{
  it.each(['toString','constructor','__proto__'])('rejects inherited %s as malformed rather than transient failure',async action=>{const {PayApplication}=await import('../src/service'),app=new PayApplication({DB:db});expect(await app.dispatch({action,scope:self} as any)).toMatchObject({ok:false,status:400,error:{code:'invalid_input'}});});
+});
+
+describe('published wire contract parsers accept what Pay returns (real D1, no provider or ledger calls)',()=>{
+ it('parses actual capabilities, orders, pages, checkout preparation and capture results without loss',async()=>{
+  const {PayApplication}=await import('../src/service');
+  const contract=await import('@devslab-kr/pay-contract');
+  const c={...connection,id:'p-contract',credentialSetId:'toss-contract'},l={...ledger,integrationId:'n-contract',credentialSetId:'ledger-contract'};
+  const registry={[c.credentialSetId]:{companyId:'company-a',provider:'toss',environment:'test',purpose:'payment',providerAccountId:c.providerAccountId,secretBinding:'PAY_TOSS_TEST_SECRET_CONTRACT',clientKeyBinding:'PAY_TOSS_TEST_CLIENT_CONTRACT'},[l.credentialSetId]:{companyId:'company-a',provider:'notify',environment:'test',purpose:'ledger',workspaceId:l.workspaceId,secretBinding:'PAY_NOTIFY_TEST_LEDGER_CONTRACT'}};
+  const app=new PayApplication({DB:db,PAY_EXTERNAL_ACTIONS_ENABLED:'true',PAY_CREDENTIAL_REGISTRY_JSON:JSON.stringify(registry),PAY_TOSS_TEST_SECRET_CONTRACT:'test_sk_contractfixture',PAY_TOSS_TEST_CLIENT_CONTRACT:'test_ck_contractfixture',PAY_NOTIFY_TEST_LEDGER_CONTRACT:'contract-ledger-fixture'});
+  const authority={check:async()=>true};
+  const ok=async(command:Parameters<typeof app.dispatch>[0])=>{const response=await app.dispatch(command,authority);if(!response.ok)throw Error('Pay rejected '+command.action+': '+response.error.code);return response.result;};
+  for(const value of [await ok({action:'capabilities',scope:self,connection:c,ledger:l}),await ok({action:'capabilities',scope:self})])expect(contract.parseCapabilities(value)).toEqual(value);
+  const order=await ok({action:'createOrder',scope:self,operationId:'contract:parse',supplyKrw:2000,connection:c,ledger:l});
+  expect(contract.parsePublicOrder(order)).toEqual(order);
+  const page=await ok({action:'listOrders',scope:self});
+  expect(contract.parseOrderPage(page)).toEqual(page);
+  const prepared=await ok({action:'prepareCheckout',scope:self,id:(order as {id:string}).id,returnTarget:'contract'});
+  expect(contract.parseCheckoutPreparation(prepared)).toEqual(prepared);
+  const state=new URL((prepared as {successUrl:string}).successUrl).searchParams.get('state')!;
+  const captured=await ok({action:'captureCheckoutCallback',outcome:'fail',state});
+  expect(contract.parseCheckoutCaptureResult(captured)).toEqual(captured);
+  const status=await ok({action:'checkoutCaptureStatus',stateHash:await contract.checkoutStateHash(state)});
+  expect(contract.parseCheckoutCaptureResult(status)).toEqual(captured);
+ });
 });

@@ -1,4 +1,4 @@
-import type {PublicPolicy} from './contracts';
+import type {PublicPolicy} from '@devslab-kr/pay-contract';
 import {object,exactKeys,invalid,utc} from './domain';
 import {boundedJson} from './http';
 export interface PolicyEnv {ADMIN_POLICIES?:{fetch(request:Request):Promise<Response>};PAY_POLICIES_ENABLED?:string}

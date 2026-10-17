@@ -1,0 +1,16 @@
+{
+  // Mirrors a consuming service (Admin): TypeScript 7, bundler resolution, strict, without
+  // exactOptionalPropertyTypes or noUncheckedIndexedAccess. It resolves the package through
+  // node_modules, so it compiles against the built dist, not src.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false
+  },
+  "include": ["consumer.ts"]
+}

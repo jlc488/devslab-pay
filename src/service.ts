@@ -1,4 +1,4 @@
-import type {PayCommand,PayResponse,PayResult,PaymentCapabilities,PaymentConfig,CheckoutPreparation,ScopedPayCommand,PayEffectAuthority} from './contracts';
+import type {PayCommand,PayResponse,PayResult,PaymentCapabilities,PaymentConfig,CheckoutPreparation,ScopedPayCommand,PayEffectAuthority} from '@devslab-kr/pay-contract';
 import type {Env} from './env';
 import {PayStore} from './store';
 import type {StoredOrder} from './store';
@@ -8,7 +8,7 @@ import type {ResolvedSnapshots} from './registry';
 import {externalGate,paymentAdapters} from './adapters';
 import {confirmPayment,refundPayment} from './payments';
 import {checkEffectAuthority} from './effect-authority';
-const pricing={minimumSupplyKrw:1000,stepSupplyKrw:1000,vatRatePercent:10,vatIncluded:false,unitPriceKrw:100} as const;
+import {PAYMENT_PRICING,CHECKOUT_ORDER_NAME,checkoutCallbackUrl} from '@devslab-kr/pay-contract';
 const fields:Record<string,{required:string[];optional?:string[]}> = {
  capabilities:{required:[],optional:['connection','ledger']},config:{required:[],optional:['connection','ledger']},inspectConnection:{required:['connection']},getOrderByOperation:{required:['operationId','supplyKrw']},
  listOrders:{required:[],optional:['cursor']},createOrder:{required:['operationId','supplyKrw','connection','ledger']},getOrder:{required:['id']},
@@ -43,7 +43,7 @@ export class PayApplication {
    case 'inspectConnection':return inspectConnection(this.env,scope,c.connection);
    case 'capabilities':{
     let ready=false;try{await this.readiness(c);externalGate(this.env);ready=true;}catch{}
-    return {companyId:scope.companyId,mode:ready?'test':'unavailable',provider:ready?'toss':null,capabilities:{read:true,checkout:ready,refund:ready},pricing,reasonCode:ready?null:'payment_unavailable'} satisfies PaymentCapabilities;
+    return {companyId:scope.companyId,mode:ready?'test':'unavailable',provider:ready?'toss':null,capabilities:{read:true,checkout:ready,refund:ready},pricing:PAYMENT_PRICING,reasonCode:ready?null:'payment_unavailable'} satisfies PaymentCapabilities;
    }
    case 'config':{
     externalGate(this.env);const resolved=await this.readiness(c),adapters=paymentAdapters(this.env,scope,resolved,effectAuthority),wallet=await adapters.ledger.wallet(),page=await this.store.list(scope),lastOrder=page.items.find(o=>o.state!=='refunded');
@@ -63,7 +63,7 @@ export class PayApplication {
     if(row.state!=='created'||row.payment_key)throw conflict();await checkEffectAuthority(effectAuthority);externalGate(this.env);
     const resolved=await this.saved(scope,row);await checkEffectAuthority(effectAuthority);externalGate(this.env);const nonce=await this.store.issueCheckout(scope,row.id,c.returnTarget,c.ownership);
     const customerKey='pay_'+(await sha256(canonical({companyId:scope.companyId,subject:scope.subject,providerAccountId:row.connection.providerAccountId}))).slice(0,32);
-    return {companyId:scope.companyId,id:row.id,mode:'test',provider:'toss',kind:'general-test',clientKey:resolved.provider.clientKey,customerKey,orderId:row.provider_order_id,amount:{currency:'KRW',value:row.total_krw},orderName:'DevsLab 문자 충전 테스트',successUrl:'https://admin.devslab.kr/api/payments/callback/success?state='+nonce.state,failUrl:'https://admin.devslab.kr/api/payments/callback/fail?state='+nonce.state,expiresAt:nonce.expiresAt} satisfies CheckoutPreparation;
+    return {companyId:scope.companyId,id:row.id,mode:'test',provider:'toss',kind:'general-test',clientKey:resolved.provider.clientKey,customerKey,orderId:row.provider_order_id,amount:{currency:'KRW',value:row.total_krw},orderName:CHECKOUT_ORDER_NAME,successUrl:checkoutCallbackUrl('success',nonce.state),failUrl:checkoutCallbackUrl('fail',nonce.state),expiresAt:nonce.expiresAt} satisfies CheckoutPreparation;
    }
    case 'confirmOrder':case 'reconcileOrder':{
     let row=await this.store.load(scope,c.id);await this.store.assertWritable(row,c.ownership);

@@ -4,9 +4,13 @@ Private Cloudflare Worker payment capability for Admin. `PayService.dispatch(Pay
 
 No account ID, route, production D1 ID, service binding or secret is configured. The included dummy D1 ID is local only. External financial actions default OFF. This repository does not create credentials or enable Toss/Notify. Live and legacy simulation execution are unavailable.
 
+## Wire contract package
+
+The RPC types, error codes, pricing, formats, checkout callback URLs, import digest and response parsers are published as `@devslab-kr/pay-contract` from `packages/pay-contract` (see its README and CHANGELOG). Pay imports them from that package through the npm workspace, so Pay cannot serve a shape other than the one it publishes; Admin installs a pinned version instead of copying the file. The Worker stays at the repository root; the root is the npm workspace root. `.npmrc` maps the `@devslab-kr` scope to GitHub Packages, so `npm ci` needs `NODE_AUTH_TOKEN` (`read:packages`) set, e.g. `NODE_AUTH_TOKEN=$(gh auth token) npm ci`.
+
 ## Local commands
 
-Node >=24.12.0. `npm ci`, `npm test`, `npm run typecheck`, `npm run build` (Wrangler dry run only), `npm run db:migrate:local`, `npm run dev`. Tests use one Vitest worker, one real local Miniflare D1 schema setup, blocked outbound traffic and isolated test data. The pinned workerd supports compatibility date 2026-10-13; it rejects 2026-10-15, so the config uses the supported date. No shared node_modules junction is used.
+Node >=24.12.0. `npm ci`, `npm test`, `npm run typecheck`, `npm run build` (Wrangler dry run only), `npm run db:migrate:local`, `npm run dev`, `npm run pack:contract` (checks the package file list without publishing). `typecheck`, `test`, `build` and `dev` build the contract package first. Tests use one Vitest worker, one real local Miniflare D1 schema setup, blocked outbound traffic and isolated test data. The pinned workerd supports compatibility date 2026-10-13; it rejects 2026-10-15, so the config uses the supported date. No shared node_modules junction is used.
 
 ## Server registry contract
 

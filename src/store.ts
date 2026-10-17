@@ -1,5 +1,6 @@
-import type {PayScope,ConnectionSnapshot,LedgerSnapshot,OwnershipFence,LegacyPaymentOrder,PaymentState,ImportReceipt,SourceCommittedProof,OrderPage,CheckoutCallback,CheckoutCaptureResult} from './contracts';
-import {calculateRecharge,canonical,sha256,validateScope,validateSnapshots,object,text,operation,utc,states,exactKeys,invalid,conflict,unavailable,PayError,publicOrder} from './domain';
+import type {PayScope,ConnectionSnapshot,LedgerSnapshot,OwnershipFence,LegacyPaymentOrder,PaymentState,ImportReceipt,SourceCommittedProof,OrderPage,CheckoutCallback,CheckoutCaptureResult,ImportDigestInput} from '@devslab-kr/pay-contract';
+import {PAYMENT_STATES,ORDER_PAGE_MAX_ITEMS,ORDER_CURSOR_MAX_LENGTH,CHECKOUT_STATE_HASH_PATTERN,importDigest as contractImportDigest,checkoutStateHash as contractCheckoutStateHash} from '@devslab-kr/pay-contract';
+import {calculateRecharge,canonical,sha256,validateScope,validateSnapshots,object,text,operation,utc,exactKeys,invalid,conflict,unavailable,PayError,publicOrder,contractFailure} from './domain';
 export interface Fingerprints {provider:string|null;ledger:string|null}
 interface OrderRow {
  id:string;company_id:string;user_id:string;provider_order_id:string;idempotency_key:string;
@@ -19,8 +20,9 @@ function fingerprint(value:string|null):string{if(!value||!/^[a-f0-9]{64}$/.test
 function unique(error:unknown):never{if(error instanceof Error&&/UNIQUE constraint failed|immutable/i.test(error.message))throw conflict();throw error;}
 function encode(value:unknown){const bytes=new TextEncoder().encode(JSON.stringify(value));return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function decode(value:string):unknown{try{const binary=atob(value.replace(/-/g,'+').replace(/_/g,'/'));return JSON.parse(new TextDecoder('utf-8',{fatal:true,ignoreBOM:false}).decode(Uint8Array.from(binary,c=>c.charCodeAt(0))));}catch{throw invalid();}}
-export async function importDigest(input:unknown):Promise<string>{return sha256(canonical(input));}
-export async function checkoutStateHash(state:string):Promise<string>{if(typeof state!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(state))throw invalid();return sha256(state);}
+/** The published cross-service import digest; a value without canonical JSON form is a 400. */
+export async function importDigest(input:unknown):Promise<string>{try{return await contractImportDigest(input as ImportDigestInput);}catch(error){throw contractFailure(error);}}
+export async function checkoutStateHash(state:string):Promise<string>{try{return await contractCheckoutStateHash(state);}catch(error){throw contractFailure(error);}}
 export class PayStore {
  constructor(readonly db:D1Database,readonly now:()=>number=Date.now){}
  private timestamp(){return new Date(this.now()).toISOString();}
@@ -61,10 +63,10 @@ export class PayStore {
  }
  async list(scope:PayScope,cursor?:string):Promise<OrderPage>{
   const p=this.predicate(scope);let suffix='',args:(string|number)[]=[...p.args];
-  if(cursor!==undefined){if(typeof cursor!=='string'||cursor.length>2048)throw invalid();const v=object(decode(cursor));exactKeys(v,['companyId','subject','access','createdAt','id']);if(v.companyId!==scope.companyId||v.subject!==(scope.access==='self'?scope.subject:'*')||v.access!==scope.access)throw invalid();const createdAt=utc(v.createdAt),id=text(v.id);suffix=' AND (created_at<? OR (created_at=? AND id<?))';args.push(createdAt,createdAt,id);}
-  const result=await this.db.prepare('SELECT * FROM payment_orders WHERE '+p.sql+suffix+' ORDER BY created_at DESC,id DESC LIMIT 51').bind(...args).all<OrderRow>();
-  const rows=result.results.slice(0,50),last=rows.at(-1);
-  return {items:rows.map(publicOrder),nextCursor:result.results.length>50&&last?encode({companyId:scope.companyId,subject:scope.access==='self'?scope.subject:'*',access:scope.access,createdAt:last.created_at,id:last.id}):null};
+  if(cursor!==undefined){if(typeof cursor!=='string'||cursor.length>ORDER_CURSOR_MAX_LENGTH)throw invalid();const v=object(decode(cursor));exactKeys(v,['companyId','subject','access','createdAt','id']);if(v.companyId!==scope.companyId||v.subject!==(scope.access==='self'?scope.subject:'*')||v.access!==scope.access)throw invalid();const createdAt=utc(v.createdAt),id=text(v.id);suffix=' AND (created_at<? OR (created_at=? AND id<?))';args.push(createdAt,createdAt,id);}
+  const result=await this.db.prepare('SELECT * FROM payment_orders WHERE '+p.sql+suffix+' ORDER BY created_at DESC,id DESC LIMIT '+(ORDER_PAGE_MAX_ITEMS+1)).bind(...args).all<OrderRow>();
+  const rows=result.results.slice(0,ORDER_PAGE_MAX_ITEMS),last=rows.at(-1);
+  return {items:rows.map(publicOrder),nextCursor:result.results.length>ORDER_PAGE_MAX_ITEMS&&last?encode({companyId:scope.companyId,subject:scope.access==='self'?scope.subject:'*',access:scope.access,createdAt:last.created_at,id:last.id}):null};
  }
  async bindPayment(scope:PayScope,id:string,key:string):Promise<StoredOrder>{
   text(key);const row=await this.load(scope,id);if(row.payment_key&&row.payment_key!==key)throw conflict();
@@ -80,7 +82,7 @@ export class PayStore {
   const saved=await this.load(scope,id);if(saved.provider_refund_id!==providerRefundId)throw conflict();return saved;
  }
  async transition(id:string,next:PaymentState,from:PaymentState[]):Promise<boolean>{
-  if(!states.includes(next)||!from.length||from.some(s=>!states.includes(s)))throw invalid();
+  if(!PAYMENT_STATES.includes(next)||!from.length||from.some(s=>!PAYMENT_STATES.includes(s)))throw invalid();
   const result=await this.db.prepare('UPDATE payment_orders SET state=?,revision=revision+1,updated_at=? WHERE id=? AND state IN ('+from.map(()=>'?').join(',')+')').bind(next,this.timestamp(),id,...from).run();return result.meta.changes===1;
  }
  async claimRefund(scope:PayScope,id:string,reason:string):Promise<boolean>{
@@ -96,7 +98,7 @@ export class PayStore {
   if(o.company_id!==scope.companyId)throw invalid();
   if(o.mode!=='sandbox'||provenance.source!=='admin'||provenance.table!=='messaging_test_payment_orders')throw invalid();
   if(provenance.quiescentMarker!==input.generation)throw conflict();
-  if(o.currency!=='KRW'||o.vat_krw!==amounts.vatKrw||o.total_krw!==amounts.totalKrw||!states.includes(o.state as PaymentState)||!Number.isSafeInteger(o.revision)||Number(o.revision)<1)throw invalid();
+  if(o.currency!=='KRW'||o.vat_krw!==amounts.vatKrw||o.total_krw!==amounts.totalKrw||!PAYMENT_STATES.includes(o.state as PaymentState)||!Number.isSafeInteger(o.revision)||Number(o.revision)<1)throw invalid();
   for(const k of ['id','user_id','provider_order_id','idempotency_key'])text(o[k]);
   if(o.payment_key!==null)text(o.payment_key);if(o.refund_reason!==null)text(o.refund_reason);
   if(o.state!=='created'&&o.payment_key===null)throw invalid();if(String(o.state).startsWith('refund')&&o.refund_reason===null)throw invalid();
@@ -155,7 +157,7 @@ export class PayStore {
  }
  private captureResult(row:NonceRow):CheckoutCaptureResult{return {returnTarget:row.return_target,companyId:row.company_id,id:row.order_id,result:row.result==='pending'?'unknown':row.result};}
  async checkoutStatus(stateHash:string):Promise<CheckoutCaptureResult>{
-  if(typeof stateHash!=='string'||!/^[a-f0-9]{64}$/.test(stateHash))throw invalid();
+  if(typeof stateHash!=='string'||!CHECKOUT_STATE_HASH_PATTERN.test(stateHash))throw invalid();
   const row=await this.db.prepare('SELECT * FROM checkout_nonces WHERE state_hash=?').bind(stateHash).first<NonceRow>();if(!row)throw missing();if(row.result==='pending'&&this.now()>=Date.parse(row.expires_at))throw conflict();return this.captureResult(row);
  }
  async captureCheckout(callback:CheckoutCallback):Promise<CheckoutCaptureResult>{

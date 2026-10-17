@@ -1,5 +1,9 @@
-/** Frozen private RPC v1. Admin mirrors these types; no browser may choose scope/snapshots. */
-export type PaymentState = 'created'|'confirming'|'provider_unknown'|'credit_pending'|'credited'|'refund_pending'|'refund_unknown'|'refunded';
+/**
+ * Frozen private RPC v1 of DevsLab Pay. Pay compiles against these types; Admin (and Contract through
+ * Admin) call Pay with them. No browser may choose scope or snapshots.
+ */
+import type {PAYMENT_STATES} from './constants.js';
+export type PaymentState = typeof PAYMENT_STATES[number];
 export interface PayScope {subject:string;companyId:string;access:'self'|'company'}
 export interface ConnectionSnapshot {id:string;companyId:string;revision:string;provider:'toss';environment:'test';providerAccountId:string;credentialSetId:string}
 export interface LedgerSnapshot {environment:'test';kind:'notify-test-wallet';transport:'notify-service'|'https-fixed-notify';provider:'notify';companyId:string;workspaceId:string;integrationId:string;revision:string;credentialSetId:string}

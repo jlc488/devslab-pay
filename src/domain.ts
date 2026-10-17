@@ -1,21 +1,19 @@
-import type {PayScope,ConnectionSnapshot,LedgerSnapshot,PaymentState,PublicOrder} from './contracts';
+import type {PayScope,ConnectionSnapshot,LedgerSnapshot,PaymentState,PublicOrder,PayErrorCode,RechargeAmounts} from '@devslab-kr/pay-contract';
+import {PayContractError,calculateRecharge as contractRecharge,canonicalJson,isOperationId,isPayText,isUtcTimestamp} from '@devslab-kr/pay-contract';
+export {sha256Hex as sha256} from '@devslab-kr/pay-contract';
 export class PayError extends Error {
- constructor(readonly status:400|401|403|404|405|409|503,readonly code:string,message:string){super(message);}
+ constructor(readonly status:400|401|403|404|405|409|503,readonly code:PayErrorCode,message:string){super(message);}
 }
 export const invalid=()=>new PayError(400,'invalid_input','The request is invalid.');
 export const conflict=()=>new PayError(409,'immutable_conflict','The saved payment intent does not match this request.');
 export const unavailable=()=>new PayError(503,'payment_unavailable','Payment integration is unavailable.');
-export const states:PaymentState[]=['created','confirming','provider_unknown','credit_pending','credited','refund_pending','refund_unknown','refunded'];
+/** The published contract's helpers reject input with PayContractError('invalid_input'); Pay reports that as its own 400. */
+export function contractFailure(error:unknown):unknown{return error instanceof PayContractError?invalid():error;}
 export function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw invalid();return value as Record<string,unknown>;}
-export function text(value:unknown,max=200):string {if(typeof value!=='string'||!value.trim()||value.length>max||/[\u0000-\u001f\u007f]/.test(value))throw invalid();return value;}
-export function operation(value:unknown):string {if(typeof value!=='string'||!/^[A-Za-z0-9:_-]{1,200}$/.test(value))throw invalid();return value;}
+export function text(value:unknown,max=200):string {if(!isPayText(value,max))throw invalid();return value;}
+export function operation(value:unknown):string {if(!isOperationId(value))throw invalid();return value;}
 export function exactKeys(value:Record<string,unknown>,required:string[],optional:string[]=[]){if(required.some(k=>!Object.hasOwn(value,k))||Object.keys(value).some(k=>!required.includes(k)&&!optional.includes(k)))throw invalid();}
-export function calculateRecharge(value:unknown){
- if(!Number.isSafeInteger(value)||Number(value)<1000||Number(value)%1000!==0)throw invalid();
- const supplyKrw=Number(value),vatKrw=supplyKrw/10,totalKrw=supplyKrw+vatKrw;
- if(!Number.isSafeInteger(vatKrw)||!Number.isSafeInteger(totalKrw))throw invalid();
- return {supplyKrw,vatKrw,totalKrw,walletCreditKrw:supplyKrw,currency:'KRW' as const};
-}
+export function calculateRecharge(value:unknown):RechargeAmounts{try{return contractRecharge(value);}catch(error){throw contractFailure(error);}}
 export function validateScope(value:unknown):PayScope {
  const v=object(value);exactKeys(v,['subject','companyId','access']);const subject=text(v.subject),companyId=text(v.companyId);
  if(v.access!=='self'&&v.access!=='company')throw invalid();return {subject,companyId,access:v.access};
@@ -57,12 +55,6 @@ export function parseLedgerReceipt(order:ReceiptOrder,id:string,value:unknown,al
 export function publicOrder(row:{id:string;company_id:string;provider_order_id:string;idempotency_key:string;supply_krw:number;vat_krw:number;total_krw:number;state:PaymentState;created_at:string;updated_at:string}):PublicOrder{
  return {mode:'test',purpose:'messaging_recharge',id:row.id,companyId:row.company_id,orderId:row.provider_order_id,operationId:row.idempotency_key,supplyKrw:row.supply_krw,vatKrw:row.vat_krw,totalKrw:row.total_krw,currency:'KRW',state:row.state,createdAt:row.created_at,updatedAt:row.updated_at};
 }
-export function canonical(value:unknown):string {
- if(value===null||typeof value==='string'||typeof value==='boolean')return JSON.stringify(value);
- if(typeof value==='number'&&Number.isFinite(value))return JSON.stringify(value);
- if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
- if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical((value as Record<string,unknown>)[k])).join(',')+'}';
- throw invalid();
-}
-export async function sha256(value:string):Promise<string>{return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(v=>v.toString(16).padStart(2,'0')).join('');}
-export function utc(value:unknown):string {if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value))throw invalid();const d=new Date(value);if(!Number.isFinite(d.getTime())||d.toISOString()!==value)throw invalid();return value;}
+/** Pay's canonical JSON (published as canonicalJson); values without a canonical form are a 400. */
+export function canonical(value:unknown):string {try{return canonicalJson(value);}catch(error){throw contractFailure(error);}}
+export function utc(value:unknown):string {if(!isUtcTimestamp(value))throw invalid();return value;}
