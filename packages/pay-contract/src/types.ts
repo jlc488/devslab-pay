@@ -3,6 +3,7 @@
  * Admin) call Pay with them. No browser may choose scope or snapshots.
  */
 import type {PAYMENT_STATES} from './constants.js';
+import type {CheckoutReturn} from './returns.js';
 export type PaymentState = typeof PAYMENT_STATES[number];
 export interface PayScope {subject:string;companyId:string;access:'self'|'company'}
 export interface ConnectionSnapshot {id:string;companyId:string;revision:string;provider:'toss';environment:'test';providerAccountId:string;credentialSetId:string}
@@ -32,7 +33,8 @@ export type ScopedPayCommand = Scoped & (
  | {action:'listOrders';cursor?:string}
  | {action:'createOrder';operationId:string;supplyKrw:number;connection:ConnectionSnapshot;ledger:LedgerSnapshot}
  | {action:'getOrder';id:string}
- | {action:'prepareCheckout';id:string;returnTarget:'contract'|'admin';ownership?:OwnershipFence}
+ /** `returnTo` (since 0.2.0) picks the final redirect from CHECKOUT_RETURN_REGISTRY; it must name the same service as `returnTarget`. */
+ | {action:'prepareCheckout';id:string;returnTarget:'contract'|'admin';returnTo?:CheckoutReturn;ownership?:OwnershipFence}
  | {action:'confirmOrder';id:string;paymentKey:string;orderId:string;amount:number;ownership?:OwnershipFence}
  | {action:'reconcileOrder';id:string;ownership?:OwnershipFence}
  | {action:'refundOrder';id:string;reason:string;ownership?:OwnershipFence}
@@ -42,7 +44,8 @@ export type ScopedPayCommand = Scoped & (
  | {action:'abortImport';id:string;ownership:OwnershipFence}
 );
 export interface CheckoutPreparation {companyId:string;id:string;mode:'test';provider:'toss';kind:'general-test';clientKey:string;customerKey:string;orderId:string;amount:{currency:'KRW';value:number};orderName:'DevsLab 문자 충전 테스트';successUrl:string;failUrl:string;expiresAt:string}
-export interface CheckoutCaptureResult {returnTarget:'contract'|'admin';companyId:string;id:string;result:'captured'|'failed'|'unknown'}
+/** `returnTo` (since 0.2.0): the registry entry saved at prepareCheckout. Pay always sends it; build the redirect with `checkoutReturnUrl`. */
+export interface CheckoutCaptureResult {returnTarget:'contract'|'admin';returnTo?:CheckoutReturn;companyId:string;id:string;result:'captured'|'failed'|'unknown'}
 export type CheckoutCallback = {outcome:'success';state:string;paymentKey:string;orderId:string;amount:number}|{outcome:'fail';state:string;code?:string;orderId?:string};
 
 export type PayCommand = ScopedPayCommand|({action:'captureCheckoutCallback'} & CheckoutCallback)|{action:'checkoutCaptureStatus';stateHash:string};
