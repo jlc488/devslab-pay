@@ -9,10 +9,12 @@
   },
   "scripts": {
     "build:contract": "npm run build --workspace @devslab-kr/pay-contract",
-    "test": "npm run test:consumer --workspace @devslab-kr/pay-contract && vitest run",
-    "typecheck": "npm run build:contract && tsc --noEmit && npm run typecheck --workspace @devslab-kr/pay-contract",
-    "build": "npm run build:contract && wrangler deploy --dry-run --outdir dist",
+    "build:ui": "npm run build --workspace @devslab-kr/pay-ui",
+    "test": "npm run test:consumer --workspace @devslab-kr/pay-contract && npm test --workspace @devslab-kr/pay-ui && vitest run",
+    "typecheck": "npm run build:contract && tsc --noEmit && npm run typecheck --workspace @devslab-kr/pay-contract && npm run typecheck --workspace @devslab-kr/pay-ui",
+    "build": "npm run build:contract && npm run build:ui && wrangler deploy --dry-run --outdir dist",
     "pack:contract": "node scripts/check-contract-pack.mjs",
+    "pack:ui": "node scripts/check-ui-pack.mjs",
     "dev": "npm run build:contract && wrangler dev --local",
     "db:migrate:local": "wrangler d1 migrations apply devslab-pay-local --local",
     "test:worker": "node scripts/test-worker.mjs"

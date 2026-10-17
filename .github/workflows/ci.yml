@@ -41,3 +41,5 @@ jobs:
       - run: npm run build
       # npm pack --dry-run of @devslab-kr/pay-contract: only dist + README/CHANGELOG/package.json may ship.
       - run: npm run pack:contract
+      # npm pack --dry-run of @devslab-kr/pay-ui: only dist (with styles.css) + README/CHANGELOG/package.json may ship.
+      - run: npm run pack:ui
