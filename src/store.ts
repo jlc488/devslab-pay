@@ -1,6 +1,6 @@
-import type {PayScope,ConnectionSnapshot,LedgerSnapshot,OwnershipFence,LegacyPaymentOrder,PaymentState,ImportReceipt,SourceCommittedProof,OrderPage,CheckoutCallback,CheckoutCaptureResult,ImportDigestInput} from '@devslab-kr/pay-contract';
+import type {PayScope,ConnectionSnapshot,LedgerSnapshot,OwnershipFence,LegacyPaymentOrder,PaymentState,ImportReceipt,SourceCommittedProof,OrderPage,CheckoutCallback,CheckoutCaptureResult,CheckoutReturn,ImportDigestInput} from '@devslab-kr/pay-contract';
 import {PAYMENT_STATES,ORDER_PAGE_MAX_ITEMS,ORDER_CURSOR_MAX_LENGTH,CHECKOUT_STATE_HASH_PATTERN,importDigest as contractImportDigest,checkoutStateHash as contractCheckoutStateHash} from '@devslab-kr/pay-contract';
-import {calculateRecharge,canonical,sha256,validateScope,validateSnapshots,object,text,operation,utc,exactKeys,invalid,conflict,unavailable,PayError,publicOrder,contractFailure} from './domain';
+import {calculateRecharge,calculateOrderRecharge,checkoutReturn,canonical,sha256,validateScope,validateSnapshots,object,text,operation,utc,exactKeys,invalid,conflict,unavailable,PayError,publicOrder,contractFailure} from './domain';
 export interface Fingerprints {provider:string|null;ledger:string|null}
 interface OrderRow {
  id:string;company_id:string;user_id:string;provider_order_id:string;idempotency_key:string;
@@ -10,7 +10,7 @@ interface OrderRow {
 }
 export interface StoredOrder extends OrderRow {connection:ConnectionSnapshot;ledger:LedgerSnapshot}
 interface ImportRow {order_id:string;migration_id:string;generation:string;digest:string;status:ImportReceipt['state']}
-interface NonceRow {state_hash:string;order_id:string;company_id:string;subject:string;scope_access:PayScope['access'];provider_order_id:string;total_krw:number;return_target:'contract'|'admin';ownership_json:string|null;expires_at:string;created_at:string;consumed_at:string|null;result:'pending'|'captured'|'failed';callback_digest:string|null}
+interface NonceRow {state_hash:string;order_id:string;company_id:string;subject:string;scope_access:PayScope['access'];provider_order_id:string;total_krw:number;return_target:'contract'|'admin';return_path:string|null;ownership_json:string|null;expires_at:string;created_at:string;consumed_at:string|null;result:'pending'|'captured'|'failed';callback_digest:string|null}
 type ImportInput={migrationId:string;generation:string;digest:string;order:LegacyPaymentOrder;connection:ConnectionSnapshot;ledger:LedgerSnapshot};
 const columns=['id','company_id','user_id','provider_order_id','idempotency_key','environment','purpose','provider','supply_krw','vat_krw','total_krw','currency','state','payment_key','refund_reason','provider_refund_id','connection_json','ledger_json','provider_fingerprint','ledger_fingerprint','origin','legacy_mode','provenance_json','revision','created_at','updated_at'] as const;
 const missing=()=>new PayError(404,'not_found','Payment order was not found.');
@@ -49,7 +49,7 @@ export class PayStore {
   if(!row)return null;if(row.user_id!==scope.subject||row.supply_krw!==supply)throw conflict();return hydrate(row);
  }
  async create(scope:PayScope,key:string,supply:number,c:ConnectionSnapshot,l:LedgerSnapshot,f:Fingerprints):Promise<StoredOrder>{
-  validateScope(scope);operation(key);const amounts=calculateRecharge(supply);validateSnapshots(scope,c,l);
+  validateScope(scope);operation(key);const amounts=calculateOrderRecharge(supply);validateSnapshots(scope,c,l);
   const prior=await this.findByOperation(scope,key,supply);
   if(prior){if(prior.connection_json!==canonical(c)||prior.ledger_json!==canonical(l)||prior.provider_fingerprint!==f.provider||prior.ledger_fingerprint!==f.ledger)throw conflict();return prior;}
   const fingerprints=await this.snapshots(scope,c,l,f),id=crypto.randomUUID(),now=this.timestamp();
@@ -147,15 +147,20 @@ export class PayStore {
   if(row.origin==='native')return;if(!ownership)throw conflict();
   const status=await this.importStatus({companyId:row.company_id,subject:row.user_id,access:'self'},row.id,ownership);if(status.state!=='active')throw conflict();
  }
- async issueCheckout(scope:PayScope,id:string,returnTarget:'contract'|'admin',ownership?:OwnershipFence):Promise<{state:string;expiresAt:string}>{
-  if(returnTarget!=='contract'&&returnTarget!=='admin')throw invalid();
+ /** `returnTo` is a 0.1.0 returnTarget (its default registry entry) or an exact registry entry; never a URL. */
+ async issueCheckout(scope:PayScope,id:string,returnTo:'contract'|'admin'|CheckoutReturn,ownership?:OwnershipFence):Promise<{state:string;expiresAt:string}>{
+  const target=typeof returnTo==='string'?checkoutReturn(returnTo):checkoutReturn(object(returnTo).service,returnTo);
   const row=await this.load(scope,id);await this.assertWritable(row,ownership);if(row.state!=='created'||row.payment_key)throw conflict();
   const bytes=crypto.getRandomValues(new Uint8Array(32)),state=btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   const hash=await checkoutStateHash(state),expiresAt=new Date(this.now()+600000).toISOString();
-  const created=await this.db.prepare("INSERT INTO checkout_nonces(state_hash,order_id,company_id,subject,scope_access,provider_order_id,total_krw,return_target,ownership_json,expires_at,created_at,result) SELECT ?,?,?,?,?,?,?,?,?,?,?,'pending' WHERE EXISTS(SELECT 1 FROM payment_orders WHERE id=? AND company_id=? AND state='created' AND payment_key IS NULL)").bind(hash,row.id,row.company_id,scope.subject,scope.access,row.provider_order_id,row.total_krw,returnTarget,ownership?canonical(ownership):null,expiresAt,this.timestamp(),row.id,row.company_id).run();
+  const created=await this.db.prepare("INSERT INTO checkout_nonces(state_hash,order_id,company_id,subject,scope_access,provider_order_id,total_krw,return_target,return_path,ownership_json,expires_at,created_at,result) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,'pending' WHERE EXISTS(SELECT 1 FROM payment_orders WHERE id=? AND company_id=? AND state='created' AND payment_key IS NULL)").bind(hash,row.id,row.company_id,scope.subject,scope.access,row.provider_order_id,row.total_krw,target.service,target.path,ownership?canonical(ownership):null,expiresAt,this.timestamp(),row.id,row.company_id).run();
   if(created.meta.changes!==1)throw conflict();return {state,expiresAt};
  }
- private captureResult(row:NonceRow):CheckoutCaptureResult{return {returnTarget:row.return_target,companyId:row.company_id,id:row.order_id,result:row.result==='pending'?'unknown':row.result};}
+ private captureResult(row:NonceRow):CheckoutCaptureResult{
+  // A saved path that is no longer in the published registry fails closed rather than redirecting anywhere.
+  let returnTo:CheckoutReturn;try{returnTo=row.return_path===null?checkoutReturn(row.return_target):checkoutReturn(row.return_target,{service:row.return_target,path:row.return_path});}catch{throw unavailable();}
+  return {returnTarget:row.return_target,returnTo,companyId:row.company_id,id:row.order_id,result:row.result==='pending'?'unknown':row.result};
+ }
  async checkoutStatus(stateHash:string):Promise<CheckoutCaptureResult>{
   if(typeof stateHash!=='string'||!CHECKOUT_STATE_HASH_PATTERN.test(stateHash))throw invalid();
   const row=await this.db.prepare('SELECT * FROM checkout_nonces WHERE state_hash=?').bind(stateHash).first<NonceRow>();if(!row)throw missing();if(row.result==='pending'&&this.now()>=Date.parse(row.expires_at))throw conflict();return this.captureResult(row);

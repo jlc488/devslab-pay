@@ -5,6 +5,8 @@ export const PAYMENT_STATES = ['created','confirming','provider_unknown','credit
 /* ---- Pricing ---- */
 export const RECHARGE_MINIMUM_SUPPLY_KRW = 1000;
 export const RECHARGE_STEP_SUPPLY_KRW = 1000;
+/** Since 0.2.0: the largest supply amount of one new order (`calculateOrderRecharge`). Existing orders above it stay readable. */
+export const RECHARGE_MAXIMUM_SUPPLY_KRW = 1000000;
 /** VAT is added on top of the supply amount; the wallet is credited with the supply amount only. */
 export const VAT_RATE_PERCENT = 10;
 export const MESSAGE_UNIT_PRICE_KRW = 100;

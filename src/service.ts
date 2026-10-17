@@ -2,7 +2,7 @@ import type {PayCommand,PayResponse,PayResult,PaymentCapabilities,PaymentConfig,
 import type {Env} from './env';
 import {PayStore} from './store';
 import type {StoredOrder} from './store';
-import {PayError,object,exactKeys,validateScope,validateSnapshots,canonical,sha256,text,operation,calculateRecharge,publicOrder,invalid,conflict,unavailable} from './domain';
+import {PayError,object,exactKeys,validateScope,validateSnapshots,canonical,sha256,text,operation,calculateOrderRecharge,checkoutReturn,publicOrder,invalid,conflict,unavailable} from './domain';
 import {inspectConnection,resolveSnapshots,registeredReferences} from './registry';
 import type {ResolvedSnapshots} from './registry';
 import {externalGate,paymentAdapters} from './adapters';
@@ -12,7 +12,7 @@ import {PAYMENT_PRICING,CHECKOUT_ORDER_NAME,checkoutCallbackUrl} from '@devslab-
 const fields:Record<string,{required:string[];optional?:string[]}> = {
  capabilities:{required:[],optional:['connection','ledger']},config:{required:[],optional:['connection','ledger']},inspectConnection:{required:['connection']},getOrderByOperation:{required:['operationId','supplyKrw']},
  listOrders:{required:[],optional:['cursor']},createOrder:{required:['operationId','supplyKrw','connection','ledger']},getOrder:{required:['id']},
- prepareCheckout:{required:['id','returnTarget'],optional:['ownership']},confirmOrder:{required:['id','paymentKey','orderId','amount'],optional:['ownership']},reconcileOrder:{required:['id'],optional:['ownership']},refundOrder:{required:['id','reason'],optional:['ownership']},
+ prepareCheckout:{required:['id','returnTarget'],optional:['returnTo','ownership']},confirmOrder:{required:['id','paymentKey','orderId','amount'],optional:['ownership']},reconcileOrder:{required:['id'],optional:['ownership']},refundOrder:{required:['id','reason'],optional:['ownership']},
  importLegacy:{required:['migrationId','generation','digest','order','connection','ledger']},importStatus:{required:['id','ownership']},activateImport:{required:['id','ownership','sourceCommitted']},abortImport:{required:['id','ownership']}
 };
 export class PayApplication {
@@ -53,15 +53,18 @@ export class PayApplication {
    case 'listOrders':return this.store.list(scope,c.cursor);
    case 'getOrder':return publicOrder(await this.store.load(scope,c.id));
    case 'createOrder':{
-    operation(c.operationId);calculateRecharge(c.supplyKrw);
+    // Pay decides every amount from its price list and caps one order; the caller only picks the supply.
+    operation(c.operationId);calculateOrderRecharge(c.supplyKrw);
     const previous=await this.store.findByOperation(scope,c.operationId,c.supplyKrw);if(previous)return publicOrder(previous);
     await checkEffectAuthority(effectAuthority);externalGate(this.env);const snapshots=validateSnapshots(scope,c.connection,c.ledger),resolved=await resolveSnapshots(this.env,scope,snapshots.connection,snapshots.ledger);
     return publicOrder(await this.store.create(scope,c.operationId,c.supplyKrw,snapshots.connection,snapshots.ledger,resolved.fingerprints));
    }
    case 'prepareCheckout':{
+    // The final redirect is chosen from the published registry only, before any effect or nonce.
+    const returnTo=checkoutReturn(c.returnTarget,c.returnTo);
     const row=await this.store.load(scope,c.id);await this.store.assertWritable(row,c.ownership);
     if(row.state!=='created'||row.payment_key)throw conflict();await checkEffectAuthority(effectAuthority);externalGate(this.env);
-    const resolved=await this.saved(scope,row);await checkEffectAuthority(effectAuthority);externalGate(this.env);const nonce=await this.store.issueCheckout(scope,row.id,c.returnTarget,c.ownership);
+    const resolved=await this.saved(scope,row);await checkEffectAuthority(effectAuthority);externalGate(this.env);const nonce=await this.store.issueCheckout(scope,row.id,returnTo,c.ownership);
     const customerKey='pay_'+(await sha256(canonical({companyId:scope.companyId,subject:scope.subject,providerAccountId:row.connection.providerAccountId}))).slice(0,32);
     return {companyId:scope.companyId,id:row.id,mode:'test',provider:'toss',kind:'general-test',clientKey:resolved.provider.clientKey,customerKey,orderId:row.provider_order_id,amount:{currency:'KRW',value:row.total_krw},orderName:CHECKOUT_ORDER_NAME,successUrl:checkoutCallbackUrl('success',nonce.state),failUrl:checkoutCallbackUrl('fail',nonce.state),expiresAt:nonce.expiresAt} satisfies CheckoutPreparation;
    }

@@ -5,6 +5,8 @@ import {
  importDigest,isPayErrorCode,parseCapabilities,parseCheckoutCaptureResult,parseCheckoutPreparation,parseOrderPage,parsePublicOrder,
  type CheckoutPreparation,type ImportDigestInput,type OrderPage,type PayBinding,type PayCommand,type PayErrorCode,type PayResponse,
  type PaymentCapabilities,type PaymentState,type PublicOrder,type ScopedPayCommand,
+ CHECKOUT_RETURN_REGISTRY,RECHARGE_MAXIMUM_SUPPLY_KRW,calculateOrderRecharge,checkoutReturnUrl,isCheckoutReturn,resolveCheckoutReturn,
+ type CheckoutReturn,type CheckoutCaptureResult,
 } from '@devslab-kr/pay-contract';
 
 declare const binding:PayBinding;
@@ -34,4 +36,13 @@ const url:string = checkoutCallbackUrl('fail','x');
 const path:'/api/payments/callback/success' = CHECKOUT_CALLBACK_PATHS.success;
 const code:PayErrorCode = PAY_ERROR_CODES[0];
 try{calculateRecharge(body);}catch(error){if(error instanceof PayContractError){const c:'invalid_input'|'invalid_response'=error.code;void c;}}
-void [run,order,state,first,caps,pricing,checkout,capture,total,url,path,code];
+// 0.2.0 additions: a 0.1.0-shaped command and capture still compile; returnTo is optional on both.
+const back:CheckoutReturn = resolveCheckoutReturn('contract');
+const prepareTo:PayCommand = {action:'prepareCheckout',scope,id:'order',returnTarget:'contract',returnTo:{service:'contract',path:'/notify'}};
+const legacyCapture:CheckoutCaptureResult = {returnTarget:'admin',companyId:'company',id:'order',result:'unknown'};
+const redirect:string = checkoutReturnUrl(parseCheckoutCaptureResult(body));
+const legacyRedirect:string = checkoutReturnUrl(legacyCapture);
+const contractOrigin:string = CHECKOUT_RETURN_REGISTRY.contract.origin;
+const isEntry:boolean = isCheckoutReturn(body);
+const max:number = calculateOrderRecharge(RECHARGE_MAXIMUM_SUPPLY_KRW).supplyKrw;
+void [run,order,state,first,caps,pricing,checkout,capture,total,url,path,code,back,prepareTo,redirect,legacyRedirect,contractOrigin,isEntry,max];
