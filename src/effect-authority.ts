@@ -1,4 +1,4 @@
-import type {PayEffectAuthority} from './contracts';
+import type {PayEffectAuthority} from '@devslab-kr/pay-contract';
 import {PayError} from './domain';
 export class EffectAuthorityError extends PayError {}
 export async function checkEffectAuthority(authority?:PayEffectAuthority):Promise<void>{

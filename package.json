@@ -3,16 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": ["packages/*"],
   "engines": {
     "node": ">=24.12.0"
   },
   "scripts": {
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "build": "wrangler deploy --dry-run --outdir dist",
-    "dev": "wrangler dev --local",
+    "build:contract": "npm run build --workspace @devslab-kr/pay-contract",
+    "test": "npm run test:consumer --workspace @devslab-kr/pay-contract && vitest run",
+    "typecheck": "npm run build:contract && tsc --noEmit && npm run typecheck --workspace @devslab-kr/pay-contract",
+    "build": "npm run build:contract && wrangler deploy --dry-run --outdir dist",
+    "pack:contract": "node scripts/check-contract-pack.mjs",
+    "dev": "npm run build:contract && wrangler dev --local",
     "db:migrate:local": "wrangler d1 migrations apply devslab-pay-local --local",
     "test:worker": "node scripts/test-worker.mjs"
+  },
+  "dependencies": {
+    "@devslab-kr/pay-contract": "0.1.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261011.1",

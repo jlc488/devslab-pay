@@ -1,6 +1,6 @@
 import {WorkerEntrypoint} from 'cloudflare:workers';
 import type {Env} from './env';
-import type {PayCommand,PayResponse,PayEffectAuthority} from './contracts';
+import type {PayCommand,PayResponse,PayEffectAuthority} from '@devslab-kr/pay-contract';
 import {PayApplication} from './service';
 import {publicFetch} from './policy';
 /** Admin-only named capability. No financial method is exposed by HTTP. */

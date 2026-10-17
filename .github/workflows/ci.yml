@@ -24,7 +24,20 @@ jobs:
         with:
           node-version: '24.12.0'
           package-manager-cache: false
-      - run: npm ci
+      # .npmrc points the @devslab-kr scope at GitHub Packages. Use a read:packages-only secret,
+      # never the broader workstation credential.
+      - name: Install locked dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_READ_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::Configure GH_PACKAGES_READ_TOKEN with authorized package read access."
+            exit 1
+          fi
+          npm ci
+      # Each of these builds @devslab-kr/pay-contract first; the Worker imports its compiled output.
       - run: npm run typecheck
       - run: npm test -- --maxWorkers=1
       - run: npm run build
+      # npm pack --dry-run of @devslab-kr/pay-contract: only dist + README/CHANGELOG/package.json may ship.
+      - run: npm run pack:contract

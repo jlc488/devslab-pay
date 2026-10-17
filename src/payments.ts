@@ -1,4 +1,4 @@
-import type {PayScope} from './contracts';
+import type {PayScope} from '@devslab-kr/pay-contract';
 import type {PayStore,StoredOrder} from './store';
 import type {PaymentAdapters} from './adapters';
 import type {GatewayPayment,LedgerReceipt} from './domain';

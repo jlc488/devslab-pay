@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {withEffectAuthority,checkEffectAuthority} from '../src/effect-authority';
-import type {PayEffectAuthority} from '../src/contracts';
+import type {PayEffectAuthority} from '@devslab-kr/pay-contract';
 describe('effect authority boundary ordering (no network)',()=>{
  it.each(['missing','false','throw','closed'])('denies %s authority before invoking any effect',async kind=>{
   let calls=0;const authority:PayEffectAuthority|undefined=kind==='missing'?undefined:{check:async()=>{if(kind==='throw')throw Error('private auth failure');return false;}};

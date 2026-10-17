@@ -1,4 +1,4 @@
-import type {TestWallet,PayScope,PayEffectAuthority} from './contracts';
+import type {TestWallet,PayScope,PayEffectAuthority} from '@devslab-kr/pay-contract';
 import type {Env} from './env';
 import type {StoredOrder} from './store';
 import type {GatewayPayment,LedgerReceipt} from './domain';

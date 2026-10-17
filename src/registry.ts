@@ -1,5 +1,6 @@
-import type {ConnectionSnapshot,LedgerSnapshot,PayScope,ConnectionInspection} from './contracts';
+import type {ConnectionSnapshot,LedgerSnapshot,PayScope,ConnectionInspection} from '@devslab-kr/pay-contract';
 import type {CredentialEnv as Env,PaymentSecretBinding,PaymentClientBinding,LedgerSecretBinding} from './env';
+import {TEST_CLIENT_KEY_PATTERN} from '@devslab-kr/pay-contract';
 import {canonical,sha256,object,text,exactKeys,validateConnection,validateSnapshots,unavailable} from './domain';
 export interface PaymentDescriptor {companyId:string;provider:'toss';environment:'test';purpose:'payment';providerAccountId:string;secretBinding:PaymentSecretBinding;clientKeyBinding:PaymentClientBinding}
 export interface LedgerDescriptor {companyId:string;provider:'notify';environment:'test';purpose:'ledger';workspaceId:string;secretBinding:LedgerSecretBinding}
@@ -33,7 +34,7 @@ function checkLedgerDescriptor(v:Record<string,unknown>,scope:PayScope,l:LedgerS
 export async function resolvePayment(env:Env,scope:PayScope,value:ConnectionSnapshot):Promise<ResolvedPayment>{
  const connection=validateConnection(scope,value),descriptor=checkPaymentDescriptor(entry(env,connection.credentialSetId),scope,connection);
  const secret=env[descriptor.secretBinding],clientKey=env[descriptor.clientKeyBinding];
- if(typeof secret!=='string'||!/^test_sk_[A-Za-z0-9_-]+$/.test(secret)||typeof clientKey!=='string'||!/^test_ck_[A-Za-z0-9_-]+$/.test(clientKey))throw unavailable();
+ if(typeof secret!=='string'||!/^test_sk_[A-Za-z0-9_-]+$/.test(secret)||typeof clientKey!=='string'||!TEST_CLIENT_KEY_PATTERN.test(clientKey))throw unavailable();
  return {secret,clientKey,fingerprint:await sha256(canonical({descriptor,secret,clientKey}))};
 }
 async function resolveLedger(env:Env,scope:PayScope,ledger:LedgerSnapshot):Promise<ResolvedLedger>{
