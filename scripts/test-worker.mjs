@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 const artifact=fileURLToPath(new URL('../dist/index.js',import.meta.url));
@@ -26,8 +26,10 @@ const runtime=new Miniflare({...convertV4MiniflareOptions({cf:false,workers:[{
 }]}),telemetry:{enabled:false}});
 try{
  const db=await runtime.getD1Database('DB','pay-built');
- const sql=await readFile(new URL('../migrations/0001_pay.sql',import.meta.url),'utf8');
- await db.batch(sql.split('-- statement').filter(s=>s.trim()).map(s=>db.prepare(s)));
+ for(const file of (await readdir(new URL('../migrations/',import.meta.url))).filter(f=>f.endsWith('.sql')).sort()){
+  const sql=await readFile(new URL('../migrations/'+file,import.meta.url),'utf8');
+  await db.batch(sql.split('-- statement').filter(s=>s.trim()).map(s=>db.prepare(s)));
+ }
  const probe=await runtime.getWorker('pay-probe'),publicWorker=await runtime.getWorker('pay-built');
  const dispatch=async command=>(await probe.fetch('http://local-probe/rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(command)})).json();
  const scope={subject:'local-actor',companyId:'local-company',access:'self'};
@@ -49,7 +51,8 @@ try{
  await db.prepare('INSERT INTO payment_orders(id,company_id,user_id,provider_order_id,idempotency_key,supply_krw,vat_krw,total_krw,connection_json,ledger_json,provider_fingerprint,ledger_fingerprint,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind('built-callback-order',scope.companyId,scope.subject,'test_built-callback-order','built-callback',1000,100,1100,JSON.stringify(connection),JSON.stringify(ledger),'a'.repeat(64),'b'.repeat(64),now,now).run();
  await db.prepare('INSERT INTO checkout_nonces(state_hash,order_id,company_id,subject,scope_access,provider_order_id,total_krw,return_target,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(stateHash,'built-callback-order',scope.companyId,scope.subject,'self','test_built-callback-order',1100,'contract',new Date(Date.now()+600000).toISOString(),now).run();
  const captured=await dispatch({action:'captureCheckoutCallback',outcome:'success',state,paymentKey:'built-private-fixture',orderId:'test_built-callback-order',amount:1100});
- assert.deepEqual(captured.result,{ok:true,result:{returnTarget:'contract',companyId:scope.companyId,id:'built-callback-order',result:'captured'}});
+ // A nonce saved before migration 0002 (no return_path) replays with the default registry entry of its target.
+ assert.deepEqual(captured.result,{ok:true,result:{returnTarget:'contract',returnTo:{service:'contract',path:'/notify'},companyId:scope.companyId,id:'built-callback-order',result:'captured'}});
  assert.equal(captured.checks,0);assert.ok(!JSON.stringify(captured).includes('built-private-fixture'));
  const saved=await db.prepare('SELECT state,revision,payment_key FROM payment_orders WHERE id=?').bind('built-callback-order').first();
  assert.deepEqual(saved,{state:'created',revision:1,payment_key:'built-private-fixture'});

@@ -4,14 +4,23 @@ import type {PaymentAdapters} from './adapters';
 import type {GatewayPayment,LedgerReceipt} from './domain';
 import {conflict} from './domain';
 import {EffectAuthorityError} from './effect-authority';
+/*
+ * Settlement rule: the wallet is credited only for an order whose provider payment Pay itself fetched from
+ * the provider (confirm or lookup, server to server) and matched field by field here: payment key, order id,
+ * merchant, amount, currency and status, with the full balance. Browser callbacks and any future webhook are
+ * only a reason to look; they never move an order to credit_pending. The credit uses the per-order
+ * idempotency key `payment:<order id>`, so a replay can never credit twice.
+ */
 function paid(order:StoredOrder,payment:GatewayPayment|null,status='DONE'){
- return !!payment&&payment.paymentKey===order.payment_key&&payment.orderId===order.provider_order_id&&payment.totalAmount===order.total_krw&&payment.currency==='KRW'&&payment.status===status;
+ return !!payment&&payment.paymentKey===order.payment_key&&payment.orderId===order.provider_order_id&&payment.merchantId===order.connection.providerAccountId&&payment.totalAmount===order.total_krw&&payment.currency==='KRW'&&payment.status===status;
 }
 function ledger(order:StoredOrder,id:string,receipt:LedgerReceipt|null,state:string){
  return !!receipt&&receipt.companyId===order.company_id&&receipt.operationId===id&&receipt.supplyKrw===order.supply_krw&&receipt.state===state;
 }
 async function effect(adapters:PaymentAdapters){await adapters.beforeEffect();}
 async function credit(store:PayStore,scope:PayScope,order:StoredOrder,adapters:PaymentAdapters){
+ // Only a durably verified approval (credit_pending) may reach the ledger.
+ if(order.state!=='credit_pending')throw conflict();
  const id='payment:'+order.id;
  try{
   await effect(adapters);let receipt=await adapters.ledger.getCredit(order,id);

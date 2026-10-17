@@ -1,6 +1,7 @@
 import {describe,expect,it} from 'vitest';
 import {
  PayContractError,canonicalJson,importDigest,parseCapabilities,parseCheckoutCaptureResult,parseCheckoutPreparation,parseOrderPage,parsePublicOrder,
+ CHECKOUT_RETURN_REGISTRY,DEFAULT_CHECKOUT_RETURNS,RECHARGE_MAXIMUM_SUPPLY_KRW,calculateOrderRecharge,calculateRecharge,checkoutReturnUrl,isCheckoutReturn,resolveCheckoutReturn,
 } from '../src/index.js';
 import {importFixture} from './fixture.js';
 
@@ -31,7 +32,7 @@ describe('response parsers',()=>{
   expect(parseCapabilities({...capabilities,secret:'x'})).toEqual(capabilities);
   expect(parseCapabilities({...capabilities,mode:'unavailable',provider:null,capabilities:{read:true,checkout:false,refund:false},reasonCode:'payment_unavailable'})).toMatchObject({mode:'unavailable',provider:null});
   expect(parseCheckoutPreparation(preparation)).toEqual(preparation);
-  expect(parseCheckoutCaptureResult({returnTarget:'admin',companyId:'company-a',id:'order-1',result:'unknown'})).toEqual({returnTarget:'admin',companyId:'company-a',id:'order-1',result:'unknown'});
+  expect(parseCheckoutCaptureResult({returnTarget:'admin',companyId:'company-a',id:'order-1',result:'unknown'})).toEqual({returnTarget:'admin',returnTo:{service:'admin',path:'/payments'},companyId:'company-a',id:'order-1',result:'unknown'});
  });
  it.each([
   ['order amounts that Pay never charges',{...order,supplyKrw:1500,vatKrw:150,totalKrw:1650}],
@@ -62,5 +63,69 @@ describe('response parsers',()=>{
  ])('reject checkout preparation with %s',(_,value)=>expect(()=>parseCheckoutPreparation(value)).toThrow(expect.objectContaining(invalidResponse)));
  it('never echo response values in the error',()=>{
   expect(()=>parsePublicOrder({...order,id:'secret-value\u0000'})).toThrow(expect.objectContaining({message:expect.not.stringContaining('secret-value')}));
+ });
+});
+
+describe('checkout return registry (0.2.0): the redirect comes only from known services and paths',()=>{
+ const invalidInput={name:'PayContractError',code:'invalid_input'};
+ const capture={returnTarget:'contract',companyId:'company-a',id:'order-1',result:'captured'} as const;
+ it('builds exactly the redirects Admin used before 0.2.0, for an explicit entry and for a bare returnTarget',()=>{
+  expect(checkoutReturnUrl({...capture,returnTo:{service:'contract',path:'/notify'}})).toBe('https://contract.devslab.kr/notify?paymentOrder=order-1&paymentResult=captured');
+  expect(checkoutReturnUrl(capture)).toBe('https://contract.devslab.kr/notify?paymentOrder=order-1&paymentResult=captured');
+  expect(checkoutReturnUrl({returnTarget:'admin',companyId:'company-a',id:'order-1',result:'failed'})).toBe('https://admin.devslab.kr/payments?companyId=company-a&testOrderId=order-1&paymentResult=failed');
+  expect(resolveCheckoutReturn('admin')).toEqual({service:'admin',path:'/payments'});
+ });
+ const attempts:[string,unknown][]=[
+  ['an absolute URL',{service:'contract',path:'https://evil.example/notify'}],
+  ['a protocol-relative URL',{service:'contract',path:'//evil.example/notify'}],
+  ['a backslash host',{service:'contract',path:'/\\evil.example'}],
+  ['an encoded slash',{service:'contract',path:'%2Fnotify'}],
+  ['an encoded traversal',{service:'contract',path:'/notify%2F..%2Fadmin'}],
+  ['a path traversal',{service:'contract',path:'/notify/../payments'}],
+  ['a case variant',{service:'contract',path:'/Notify'}],
+  ['a query suffix',{service:'contract',path:'/notify?next=//evil.example'}],
+  ['a fragment suffix',{service:'contract',path:'/notify#@evil.example'}],
+  ['another service path',{service:'contract',path:'/payments'}],
+  ['an unknown service',{service:'evil.example',path:'/notify'}],
+  ['an inherited service name',{service:'constructor',path:'/notify'}],
+  ['an extra origin field',{service:'contract',path:'/notify',origin:'https://evil.example'}],
+  ['a raw URL string','https://contract.devslab.kr/notify'],
+  ['a prototype-less object',Object.assign(Object.create(null),{service:'contract',path:'/notify'})],
+ ];
+ it.each(attempts)('rejects %s as a return entry',(_,returnTo)=>{
+  expect(isCheckoutReturn(returnTo)).toBe(false);
+  expect(()=>resolveCheckoutReturn('contract',returnTo)).toThrow(expect.objectContaining(invalidInput));
+  expect(()=>checkoutReturnUrl({...capture,returnTo} as never)).toThrow(expect.objectContaining(invalidInput));
+ });
+ it('rejects a returnTo of another service than returnTarget and an unknown returnTarget',()=>{
+  expect(()=>resolveCheckoutReturn('contract',{service:'admin',path:'/payments'})).toThrow(expect.objectContaining(invalidInput));
+  for(const target of ['https://evil.example','//evil.example','__proto__','toString'])expect(()=>resolveCheckoutReturn(target)).toThrow(expect.objectContaining(invalidInput));
+ });
+ it.each([
+  ['a company id with a host',{companyId:'evil.example'}],
+  ['an order id with a slash',{id:'../admin'}],
+  ['an order id with a query',{id:'order?next=//evil.example'}],
+  ['an encoded order id',{id:'order%2F1'}],
+  ['an unknown result',{result:'paid'}],
+ ])('refuses to build a redirect with %s',(_,patch)=>expect(()=>checkoutReturnUrl({...capture,...patch} as never)).toThrow(expect.objectContaining(invalidInput)));
+ it('cannot be retargeted at runtime',()=>{
+  expect(()=>{(CHECKOUT_RETURN_REGISTRY.contract as {origin:string}).origin='https://evil.example';}).toThrow(TypeError);
+  expect(()=>{(CHECKOUT_RETURN_REGISTRY.contract.paths as unknown as string[]).push('//evil.example');}).toThrow(TypeError);
+  expect(()=>{(DEFAULT_CHECKOUT_RETURNS.admin as {path:string}).path='//evil.example';}).toThrow(TypeError);
+  expect(checkoutReturnUrl(capture)).toBe('https://contract.devslab.kr/notify?paymentOrder=order-1&paymentResult=captured');
+ });
+ it('parses a capture result with or without returnTo and rejects an entry outside the registry',()=>{
+  expect(parseCheckoutCaptureResult({...capture,returnTo:{service:'contract',path:'/notify'}})).toEqual({...capture,returnTo:{service:'contract',path:'/notify'}});
+  expect(parseCheckoutCaptureResult({returnTarget:'admin',companyId:'company-a',id:'order-1',result:'unknown'})).toEqual({returnTarget:'admin',returnTo:{service:'admin',path:'/payments'},companyId:'company-a',id:'order-1',result:'unknown'});
+  for(const returnTo of [{service:'contract',path:'//evil.example'},{service:'admin',path:'/payments'},'https://contract.devslab.kr/notify'])
+   expect(()=>parseCheckoutCaptureResult({...capture,returnTo})).toThrow(expect.objectContaining(invalidResponse));
+ });
+});
+
+describe('order amounts (0.2.0)',()=>{
+ it('caps one new order at RECHARGE_MAXIMUM_SUPPLY_KRW while calculateRecharge keeps its 0.1.0 range',()=>{
+  expect(calculateOrderRecharge(RECHARGE_MAXIMUM_SUPPLY_KRW)).toEqual({supplyKrw:1000000,vatKrw:100000,totalKrw:1100000,walletCreditKrw:1000000,currency:'KRW'});
+  for(const value of [RECHARGE_MAXIMUM_SUPPLY_KRW+1000,1500,999,'1000'])expect(()=>calculateOrderRecharge(value)).toThrow(expect.objectContaining({code:'invalid_input'}));
+  expect(calculateRecharge(RECHARGE_MAXIMUM_SUPPLY_KRW+1000).supplyKrw).toBe(1001000);
  });
 });

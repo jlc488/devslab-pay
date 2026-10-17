@@ -5,6 +5,7 @@ import {
 } from './constants.js';
 import {PayContractError} from './errors.js';
 import {calculateRecharge} from './pricing.js';
+import {DEFAULT_CHECKOUT_RETURNS,isCheckoutReturn,type CheckoutReturn} from './returns.js';
 import type {CheckoutCaptureResult,CheckoutPreparation,OrderPage,PaymentCapabilities,PublicOrder} from './types.js';
 
 /*
@@ -92,11 +93,19 @@ export function parseCheckoutPreparation(value:unknown):CheckoutPreparation{
   successUrl:v.successUrl as string,failUrl:v.failUrl as string,expiresAt:timestamp(v.expiresAt,what),
  };
 }
-/** captureCheckoutCallback and checkoutCaptureStatus. */
-export function parseCheckoutCaptureResult(value:unknown):CheckoutCaptureResult{
+/**
+ * captureCheckoutCallback and checkoutCaptureStatus. Since 0.2.0 `returnTo` must be an exact registry entry
+ * of the same service as `returnTarget`; a response without it (Pay before 0.2.0) gets the service's default
+ * entry, so the result always carries `returnTo`.
+ */
+export function parseCheckoutCaptureResult(value:unknown):CheckoutCaptureResult&{returnTo:CheckoutReturn}{
  const what='checkout capture',v=record(value,what);
+ const returnTarget=oneOf(v.returnTarget,['contract','admin'] as const,what);
+ let returnTo:CheckoutReturn;
+ if(v.returnTo===undefined)returnTo={...DEFAULT_CHECKOUT_RETURNS[returnTarget]};
+ else{if(!isCheckoutReturn(v.returnTo)||v.returnTo.service!==returnTarget)fail(what);returnTo={service:v.returnTo.service,path:v.returnTo.path} as CheckoutReturn;}
  return {
-  returnTarget:oneOf(v.returnTarget,['contract','admin'] as const,what),companyId:text(v.companyId,what),id:text(v.id,what),
+  returnTarget,returnTo,companyId:text(v.companyId,what),id:text(v.id,what),
   result:oneOf(v.result,['captured','failed','unknown'] as const,what),
  };
 }

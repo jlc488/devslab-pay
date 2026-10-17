@@ -1,9 +1,11 @@
 import {afterAll,beforeAll,describe,it,expect} from 'vitest';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import {URL as NodeURL} from 'node:url';
 import {PayStore,importDigest} from '../src/store';
-import type {PayScope,ConnectionSnapshot,LedgerSnapshot,LegacyPaymentOrder,OwnershipFence} from '@devslab-kr/pay-contract';
+import type {PayScope,ConnectionSnapshot,LedgerSnapshot,LegacyPaymentOrder,OwnershipFence,PayCommand} from '@devslab-kr/pay-contract';
+import type {StoredOrder} from '../src/store';
+import type {GatewayPayment,LedgerReceipt} from '../src/domain';
 import type {PaymentAdapters,PaymentGateway,PaymentLedger} from '../src/adapters';
 function boundaries(value:{gateway?:Partial<PaymentGateway>;ledger?:Partial<PaymentLedger>}):PaymentAdapters {
  const unexpected=async():Promise<never>=>{throw Error('Unexpected scripted boundary');};
@@ -16,7 +18,7 @@ const connection:ConnectionSnapshot={id:'p-a',companyId:'company-a',revision:'1'
 const ledger:LedgerSnapshot={environment:'test',kind:'notify-test-wallet',transport:'https-fixed-notify',provider:'notify',companyId:'company-a',workspaceId:'workspace-a',integrationId:'n-a',revision:'1',credentialSetId:'notify-test-ledger-v1'};
 const fingerprints={provider:'a'.repeat(64),ledger:'b'.repeat(64)};
 let mf:Miniflare,store:PayStore,db:D1Database;
-beforeAll(async()=>{mf=new Miniflare({...convertV4MiniflareOptions({cf:false,workers:[{name:'pay-tests',modules:true,script:"export default {fetch(){return new Response('not found',{status:404})}}",compatibilityDate:'2026-10-13',d1Databases:{DB:'pay-test-db'},outboundService:async()=>new Response('blocked',{status:503})}]}),telemetry:{enabled:false}});db=await mf.getD1Database('DB','pay-tests');const sql=await readFile(new NodeURL('../migrations/0001_pay.sql',import.meta.url),'utf8');await db.batch(sql.split('-- statement').filter(s=>s.trim()).map(s=>db.prepare(s)));store=new PayStore(db);});
+beforeAll(async()=>{mf=new Miniflare({...convertV4MiniflareOptions({cf:false,workers:[{name:'pay-tests',modules:true,script:"export default {fetch(){return new Response('not found',{status:404})}}",compatibilityDate:'2026-10-13',d1Databases:{DB:'pay-test-db'},outboundService:async()=>new Response('blocked',{status:503})}]}),telemetry:{enabled:false}});db=await mf.getD1Database('DB','pay-tests');for(const file of (await readdir(new NodeURL('../migrations/',import.meta.url))).filter(f=>f.endsWith('.sql')).sort()){const sql=await readFile(new NodeURL('../migrations/'+file,import.meta.url),'utf8');await db.batch(sql.split('-- statement').filter(s=>s.trim()).map(s=>db.prepare(s)));}store=new PayStore(db);});
 afterAll(async()=>{await mf?.dispose();});
 async function created(...args:Parameters<PayStore['create']>){const row=await store.create(...args);expect(row,'persisted order must have a durable identity').toMatchObject({id:expect.any(String)});return row;}
 async function imported(...args:Parameters<PayStore['importLegacy']>){const receipt=await store.importLegacy(...args);expect(receipt,'import must return a durable staged receipt').toMatchObject({orderId:expect.any(String)});return receipt;}
@@ -57,9 +59,9 @@ describe('durable state machine with failing scripted boundaries (not service in
 
 describe('real D1 checkout callback journal (no provider or ledger calls)',()=>{
  async function nonce(localStore:PayStore,id:string){const value=await localStore.issueCheckout(self,id,'contract');expect(value).toMatchObject({state:expect.any(String),expiresAt:expect.any(String)});return value;}
- it('stores only a 256bit state hash and captures one matching key without changing financial state',async()=>{const row=await created(self,'checkout:capture',1000,connection,ledger,fingerprints),issued=await nonce(store,row.id);expect(issued.state).toMatch(/^[A-Za-z0-9_-]{43}$/);const saved=await db.prepare('SELECT * FROM checkout_nonces WHERE order_id=?').bind(row.id).first<any>();expect(JSON.stringify(saved)).not.toContain(issued.state);expect(saved.state_hash).toMatch(/^[a-f0-9]{64}$/);const result=await store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'callback-private-key',orderId:row.provider_order_id,amount:1100});expect(result).toEqual({returnTarget:'contract',companyId:'company-a',id:row.id,result:'captured'});const captured=await store.load(self,row.id);expect(captured).toMatchObject({state:'created',revision:1,payment_key:'callback-private-key',updated_at:row.updated_at});expect(JSON.stringify(result)).not.toContain('callback-private-key');expect(await store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'callback-private-key',orderId:row.provider_order_id,amount:1100})).toEqual(result);await expect(store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'second-private-key',orderId:row.provider_order_id,amount:1100})).rejects.toMatchObject({status:409});expect((await store.load(self,row.id)).payment_key).toBe('callback-private-key');});
+ it('stores only a 256bit state hash and captures one matching key without changing financial state',async()=>{const row=await created(self,'checkout:capture',1000,connection,ledger,fingerprints),issued=await nonce(store,row.id);expect(issued.state).toMatch(/^[A-Za-z0-9_-]{43}$/);const saved=await db.prepare('SELECT * FROM checkout_nonces WHERE order_id=?').bind(row.id).first<any>();expect(JSON.stringify(saved)).not.toContain(issued.state);expect(saved.state_hash).toMatch(/^[a-f0-9]{64}$/);const result=await store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'callback-private-key',orderId:row.provider_order_id,amount:1100});expect(result).toEqual({returnTarget:'contract',returnTo:{service:'contract',path:'/notify'},companyId:'company-a',id:row.id,result:'captured'});const captured=await store.load(self,row.id);expect(captured).toMatchObject({state:'created',revision:1,payment_key:'callback-private-key',updated_at:row.updated_at});expect(JSON.stringify(result)).not.toContain('callback-private-key');expect(await store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'callback-private-key',orderId:row.provider_order_id,amount:1100})).toEqual(result);await expect(store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'second-private-key',orderId:row.provider_order_id,amount:1100})).rejects.toMatchObject({status:409});expect((await store.load(self,row.id)).payment_key).toBe('callback-private-key');});
  it('rejects expired, tampered, wrong-order or wrong-amount state before any private key change',async()=>{let now=Date.parse('2026-10-15T00:00:00.000Z');const clockStore=new PayStore(db,()=>now),row=await created(self,'checkout:expiry',1000,connection,ledger,fingerprints),issued=await nonce(clockStore,row.id);const callback={outcome:'success' as const,state:issued.state,paymentKey:'expiry-private',orderId:row.provider_order_id,amount:1100};await expect(clockStore.captureCheckout({...callback,state:'a'.repeat(43)})).rejects.toMatchObject({status:404});await expect(clockStore.captureCheckout({...callback,orderId:'foreign'})).rejects.toMatchObject({status:409});await expect(clockStore.captureCheckout({...callback,amount:1000})).rejects.toMatchObject({status:409});now+=600001;await expect(clockStore.captureCheckout(callback)).rejects.toMatchObject({status:409});expect(await store.load(self,row.id)).toMatchObject({payment_key:null,state:'created',revision:1});});
- it('consumes failure only once, discards provider details and reports pending as unknown',async()=>{const row=await created(self,'checkout:failed',1000,connection,ledger,fingerprints),issued=await nonce(store,row.id);const {checkoutStateHash}=await import('../src/store');expect(await store.checkoutStatus(await checkoutStateHash(issued.state))).toEqual({returnTarget:'contract',companyId:'company-a',id:row.id,result:'unknown'});const failed=await store.captureCheckout({outcome:'fail',state:issued.state,code:'PRIVATE_PROVIDER_DETAIL'});expect(failed).toEqual({returnTarget:'contract',companyId:'company-a',id:row.id,result:'failed'});expect(JSON.stringify(failed)).not.toContain('PRIVATE_PROVIDER_DETAIL');expect(await store.load(self,row.id)).toMatchObject({payment_key:null,state:'created'});await expect(store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'never-saved',orderId:row.provider_order_id,amount:1100})).rejects.toMatchObject({status:409});});
+ it('consumes failure only once, discards provider details and reports pending as unknown',async()=>{const row=await created(self,'checkout:failed',1000,connection,ledger,fingerprints),issued=await nonce(store,row.id);const {checkoutStateHash}=await import('../src/store');expect(await store.checkoutStatus(await checkoutStateHash(issued.state))).toEqual({returnTarget:'contract',returnTo:{service:'contract',path:'/notify'},companyId:'company-a',id:row.id,result:'unknown'});const failed=await store.captureCheckout({outcome:'fail',state:issued.state,code:'PRIVATE_PROVIDER_DETAIL'});expect(failed).toEqual({returnTarget:'contract',returnTo:{service:'contract',path:'/notify'},companyId:'company-a',id:row.id,result:'failed'});expect(JSON.stringify(failed)).not.toContain('PRIVATE_PROVIDER_DETAIL');expect(await store.load(self,row.id)).toMatchObject({payment_key:null,state:'created'});await expect(store.captureCheckout({outcome:'success',state:issued.state,paymentKey:'never-saved',orderId:row.provider_order_id,amount:1100})).rejects.toMatchObject({status:409});});
 });
 
 
@@ -81,12 +83,12 @@ describe('real D1 callback guard failure and gate isolation',()=>{
 
 
 describe('effect authority revocation with real D1 and scripted boundaries (ordering only)',()=>{
- it('durably records provider fact before revocation prevents the later ledger call',async()=>{const row=await created(self,'authority:provider-fact',1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'authority-private');const {checkEffectAuthority}=await import('../src/effect-authority'),{confirmPayment}=await import('../src/payments');let allowed=true,ledgerCalls=0;const adapters=boundaries({gateway:{confirm:async order=>{allowed=false;return {paymentKey:order.payment_key!,orderId:order.provider_order_id,totalAmount:1100,currency:'KRW',status:'DONE',balanceAmount:1100};}},ledger:{getCredit:async()=>{ledgerCalls++;throw Error('must not reach ledger after revocation');}}});adapters.beforeEffect=()=>checkEffectAuthority({check:async()=>allowed});await expect(confirmPayment(store,self,await store.load(self,row.id),adapters)).rejects.toMatchObject({status:403});expect(await store.load(self,row.id)).toMatchObject({state:'credit_pending',payment_key:'authority-private'});expect(ledgerCalls).toBe(0);});
+ it('durably records provider fact before revocation prevents the later ledger call',async()=>{const row=await created(self,'authority:provider-fact',1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'authority-private');const {checkEffectAuthority}=await import('../src/effect-authority'),{confirmPayment}=await import('../src/payments');let allowed=true,ledgerCalls=0;const adapters=boundaries({gateway:{confirm:async order=>{allowed=false;return {paymentKey:order.payment_key!,orderId:order.provider_order_id,merchantId:'merchant-a',totalAmount:1100,currency:'KRW',status:'DONE',balanceAmount:1100};}},ledger:{getCredit:async()=>{ledgerCalls++;throw Error('must not reach ledger after revocation');}}});adapters.beforeEffect=()=>checkEffectAuthority({check:async()=>allowed});await expect(confirmPayment(store,self,await store.load(self,row.id),adapters)).rejects.toMatchObject({status:403});expect(await store.load(self,row.id)).toMatchObject({state:'credit_pending',payment_key:'authority-private'});expect(ledgerCalls).toBe(0);});
 });
 
 
 describe('effect authority refund proof ordering (real D1, scripted boundaries only)',()=>{
- it('keeps the known refund proof when authority is revoked before ledger finalize',async()=>{const row=await created(self,'authority:refund-proof',1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'refund-authority-private');await store.transition(row.id,'credited',['created']);const {checkEffectAuthority}=await import('../src/effect-authority'),{refundPayment}=await import('../src/payments');let allowed=true,finalizeCalls=0;const adapters=boundaries({gateway:{cancel:async order=>{allowed=false;return {paymentKey:order.payment_key!,orderId:order.provider_order_id,totalAmount:1100,currency:'KRW',status:'CANCELED',balanceAmount:0,refundTransactionId:'immutable-refund-proof'};}},ledger:{reserveRefund:async order=>({companyId:order.company_id,operationId:'refund:'+order.id,supplyKrw:1000,state:'reserved'}),finalizeRefund:async()=>{finalizeCalls++;throw Error('must not finalize after revocation');}}});adapters.beforeEffect=()=>checkEffectAuthority({check:async()=>allowed});await expect(refundPayment(store,self,await store.load(self,row.id),'Original reason',adapters)).rejects.toMatchObject({status:403});expect(await store.load(self,row.id)).toMatchObject({state:'refund_unknown',refund_reason:'Original reason',provider_refund_id:'immutable-refund-proof'});expect(finalizeCalls).toBe(0);});
+ it('keeps the known refund proof when authority is revoked before ledger finalize',async()=>{const row=await created(self,'authority:refund-proof',1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'refund-authority-private');await store.transition(row.id,'credited',['created']);const {checkEffectAuthority}=await import('../src/effect-authority'),{refundPayment}=await import('../src/payments');let allowed=true,finalizeCalls=0;const adapters=boundaries({gateway:{cancel:async order=>{allowed=false;return {paymentKey:order.payment_key!,orderId:order.provider_order_id,merchantId:'merchant-a',totalAmount:1100,currency:'KRW',status:'CANCELED',balanceAmount:0,refundTransactionId:'immutable-refund-proof'};}},ledger:{reserveRefund:async order=>({companyId:order.company_id,operationId:'refund:'+order.id,supplyKrw:1000,state:'reserved'}),finalizeRefund:async()=>{finalizeCalls++;throw Error('must not finalize after revocation');}}});adapters.beforeEffect=()=>checkEffectAuthority({check:async()=>allowed});await expect(refundPayment(store,self,await store.load(self,row.id),'Original reason',adapters)).rejects.toMatchObject({status:403});expect(await store.load(self,row.id)).toMatchObject({state:'refund_unknown',refund_reason:'Original reason',provider_refund_id:'immutable-refund-proof'});expect(finalizeCalls).toBe(0);});
 });
 
 describe('checkout failure order identity v1.6 (actual D1, no financial effects)',()=>{
@@ -139,5 +141,146 @@ describe('published wire contract parsers accept what Pay returns (real D1, no p
   expect(contract.parseCheckoutCaptureResult(captured)).toEqual(captured);
   const status=await ok({action:'checkoutCaptureStatus',stateHash:await contract.checkoutStateHash(state)});
   expect(contract.parseCheckoutCaptureResult(status)).toEqual(captured);
+ });
+});
+
+describe('checkout return registry (pay-contract 0.2.0, real D1, no provider or ledger calls)',()=>{
+ const c={...connection,id:'p-return',credentialSetId:'toss-return'},l={...ledger,integrationId:'n-return',credentialSetId:'ledger-return'};
+ const registry={[c.credentialSetId]:{companyId:'company-a',provider:'toss',environment:'test',purpose:'payment',providerAccountId:c.providerAccountId,secretBinding:'PAY_TOSS_TEST_SECRET_RETURN',clientKeyBinding:'PAY_TOSS_TEST_CLIENT_RETURN'},[l.credentialSetId]:{companyId:'company-a',provider:'notify',environment:'test',purpose:'ledger',workspaceId:l.workspaceId,secretBinding:'PAY_NOTIFY_TEST_LEDGER_RETURN'}};
+ const env={PAY_EXTERNAL_ACTIONS_ENABLED:'true',PAY_CREDENTIAL_REGISTRY_JSON:JSON.stringify(registry),PAY_TOSS_TEST_SECRET_RETURN:'test_sk_returnfixture',PAY_TOSS_TEST_CLIENT_RETURN:'test_ck_returnfixture',PAY_NOTIFY_TEST_LEDGER_RETURN:'return-ledger-fixture'};
+ const authority={check:async()=>true};
+ async function app(){const {PayApplication}=await import('../src/service');return new PayApplication({DB:db,...env});}
+ async function order(key:string,scope:PayScope=self){const a=await app(),r=await a.dispatch({action:'createOrder',scope,operationId:key,supplyKrw:1000,connection:c,ledger:l},authority);if(!r.ok)throw Error('createOrder '+r.error.code);return (r.result as {id:string}).id;}
+ const nonces=async(id:string)=>db.prepare('SELECT COUNT(*) AS n FROM checkout_nonces WHERE order_id=?').bind(id).first<number>('n');
+ it('saves the chosen registry entry and builds only the registry redirect from the capture',async()=>{
+  const contract=await import('@devslab-kr/pay-contract');
+  for(const [scope,returnTarget,path,expected] of [
+   [self,'contract','/notify','https://contract.devslab.kr/notify?paymentOrder=ID&paymentResult=failed'],
+   [owner,'admin','/payments','https://admin.devslab.kr/payments?companyId=company-a&testOrderId=ID&paymentResult=failed'],
+  ] as const){
+   const a=await app(),id=await order('return:'+returnTarget,scope);
+   const prepared=await a.dispatch({action:'prepareCheckout',scope,id,returnTarget,returnTo:{service:returnTarget,path}} as PayCommand,authority);
+   if(!prepared.ok)throw Error('prepareCheckout '+prepared.error.code);
+   const state=new URL((prepared.result as {successUrl:string}).successUrl).searchParams.get('state')!;
+   const captured=await a.dispatch({action:'captureCheckoutCallback',outcome:'fail',state});
+   expect(captured).toEqual({ok:true,result:{returnTarget,returnTo:{service:returnTarget,path},companyId:'company-a',id,result:'failed'}});
+   const parsed=contract.parseCheckoutCaptureResult((captured as {result:unknown}).result);
+   expect(contract.checkoutReturnUrl(parsed)).toBe(expected.replace('ID',id));
+   expect(await db.prepare('SELECT return_target,return_path FROM checkout_nonces WHERE order_id=?').bind(id).first()).toEqual({return_target:returnTarget,return_path:path});
+  }
+ });
+ it.each([
+  ['an absolute URL',{service:'contract',path:'https://evil.example/notify'}],
+  ['a protocol-relative URL',{service:'contract',path:'//evil.example/notify'}],
+  ['a backslash host',{service:'contract',path:'/\\evil.example'}],
+  ['an encoded slash',{service:'contract',path:'%2Fnotify'}],
+  ['an encoded traversal',{service:'contract',path:'/notify%2F..%2Fadmin'}],
+  ['a path traversal',{service:'contract',path:'/notify/../payments'}],
+  ['a dot segment prefix',{service:'contract',path:'/./notify'}],
+  ['a case variant',{service:'contract',path:'/Notify'}],
+  ['a trailing slash',{service:'contract',path:'/notify/'}],
+  ['a query suffix',{service:'contract',path:'/notify?next=https://evil.example'}],
+  ['a fragment suffix',{service:'contract',path:'/notify#x'}],
+  ['leading whitespace',{service:'contract',path:' /notify'}],
+  ['another service path',{service:'contract',path:'/payments'}],
+  ['a different service than returnTarget',{service:'admin',path:'/payments'}],
+  ['an unknown service',{service:'evil',path:'/notify'}],
+  ['an inherited service name',{service:'__proto__',path:'/notify'}],
+  ['an extra origin field',{service:'contract',path:'/notify',origin:'https://evil.example'}],
+  ['a raw URL string','https://contract.devslab.kr/notify'],
+  ['an array',['contract','/notify']],
+ ])('rejects %s before any nonce exists',async(name,returnTo)=>{
+  const a=await app(),id=await order('return:reject:'+name.replace(/[^a-z]/g,'-'));
+  expect(await a.dispatch({action:'prepareCheckout',scope:self,id,returnTarget:'contract',returnTo} as unknown as PayCommand,authority)).toMatchObject({ok:false,status:400,error:{code:'invalid_input'}});
+  expect(await nonces(id)).toBe(0);
+ });
+ it('rejects an unregistered returnTarget and a raw URL target',async()=>{
+  const a=await app(),id=await order('return:target');
+  for(const returnTarget of ['https://evil.example','//evil.example','contract/../admin','toString'])
+   expect(await a.dispatch({action:'prepareCheckout',scope:self,id,returnTarget} as unknown as PayCommand,authority)).toMatchObject({ok:false,status:400});
+  expect(await nonces(id)).toBe(0);
+ });
+ it('bounds the saved path in SQL, keeps it immutable and fails closed for a path the registry no longer lists',async()=>{
+  const row=await created(self,'return:sql',1000,connection,ledger,fingerprints),issued=await store.issueCheckout(self,row.id,{service:'contract',path:'/notify'});
+  const {checkoutStateHash}=await import('../src/store'),hash=await checkoutStateHash(issued.state);
+  await expect(db.prepare('UPDATE checkout_nonces SET return_path=? WHERE state_hash=?').bind('/payments',hash).run()).rejects.toThrow();
+  const insert=(path:string,fill:string)=>db.prepare('INSERT INTO checkout_nonces(state_hash,order_id,company_id,subject,scope_access,provider_order_id,total_krw,return_target,return_path,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(fill.repeat(64),row.id,'company-a','alice','self',row.provider_order_id,1100,'contract',path,new Date(Date.now()+600000).toISOString(),new Date().toISOString()).run();
+  for(const [path,fill] of [['//evil.example','c'],['https://evil.example','d'],['/notify/../payments','e'],['notify','f']] as const)await expect(insert(path,fill)).rejects.toThrow();
+  await insert('/retired','9');
+  await expect(store.checkoutStatus('9'.repeat(64))).rejects.toMatchObject({status:503});
+ });
+});
+
+describe('settlement only after Pay verified the provider payment itself (real D1, scripted boundaries)',()=>{
+ const done=(o:StoredOrder):GatewayPayment=>({paymentKey:o.payment_key!,orderId:o.provider_order_id,merchantId:'merchant-a',totalAmount:o.total_krw,currency:'KRW',status:'DONE',balanceAmount:o.total_krw});
+ const receipt=(o:StoredOrder,id:string):LedgerReceipt=>({operationId:id,companyId:o.company_id,supplyKrw:o.supply_krw,state:'credited'});
+ it.each([
+  ['a foreign order id',{orderId:'test_other'}],
+  ['a foreign merchant',{merchantId:'merchant-b'}],
+  ['a different amount',{totalAmount:1000}],
+  ['a different currency',{currency:'USD'}],
+  ['an unpaid status',{status:'WAITING_FOR_DEPOSIT'}],
+  ['a partially cancelled balance',{balanceAmount:100}],
+ ])('never touches the ledger when the fetched receipt has %s',async(name,patch)=>{
+  const key=name.replace(/[^a-z]/g,'-'),row=await created(self,'settle:'+key,1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'settle-key-'+key);
+  let ledgerCalls=0;const {confirmPayment}=await import('../src/payments');
+  const result=await confirmPayment(store,self,await store.load(self,row.id),boundaries({gateway:{confirm:async o=>({...done(o),...patch}) as GatewayPayment},ledger:{getCredit:async()=>{ledgerCalls++;return null;},credit:async()=>{ledgerCalls++;throw Error('must not credit');}}}));
+  expect(result.state).toBe('provider_unknown');expect(ledgerCalls).toBe(0);
+ });
+ it('credits once with the per-order idempotency key after a verified receipt, and never again on replay',async()=>{
+  const row=await created(self,'settle:verified',1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'settle-verified-key');
+  const credits:string[]=[];let saved:LedgerReceipt|null=null;const {confirmPayment}=await import('../src/payments');
+  const adapters=boundaries({gateway:{confirm:async o=>done(o),lookup:async o=>done(o)},ledger:{getCredit:async()=>saved,credit:async(o,id)=>{credits.push(id);saved=receipt(o,id);return saved;}}});
+  expect((await confirmPayment(store,self,await store.load(self,row.id),adapters)).state).toBe('credited');
+  expect(credits).toEqual(['payment:'+row.id]);
+  expect((await confirmPayment(store,self,await store.load(self,row.id),adapters)).state).toBe('credited');
+  expect(credits).toHaveLength(1);
+ });
+ it('resumes credit_pending through the existing ledger receipt instead of a second credit',async()=>{
+  const row=await created(self,'settle:resume',1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'settle-resume-key');await store.transition(row.id,'credit_pending',['created']);
+  let credits=0;const {confirmPayment}=await import('../src/payments');
+  const result=await confirmPayment(store,self,await store.load(self,row.id),boundaries({ledger:{getCredit:async(o,id)=>receipt(o,id),credit:async()=>{credits++;throw Error('second credit');}}}));
+  expect(result.state).toBe('credited');expect(credits).toBe(0);
+ });
+ it('rejects a browser-supplied amount or order that differs from the saved order before binding a payment key',async()=>{
+  const row=await created(self,'settle:browser',1000,connection,ledger,fingerprints);const {PayApplication}=await import('../src/service'),a=new PayApplication({DB:db});
+  for(const patch of [{amount:1000},{amount:110000},{amount:1100.5},{amount:'1100'},{orderId:'test_other'}])
+   expect(await a.dispatch({action:'confirmOrder',scope:self,id:row.id,paymentKey:'browser-key',orderId:row.provider_order_id,amount:1100,...patch} as unknown as PayCommand)).toMatchObject({ok:false,status:409});
+  expect(await store.load(self,row.id)).toMatchObject({state:'created',payment_key:null});
+ });
+});
+
+describe('Pay decides amounts and caps one order (real D1)',()=>{
+ it('derives VAT and total from the price list, caps the supply and refuses caller totals',async()=>{
+  const {PayApplication}=await import('../src/service'),a=new PayApplication({DB:db});
+  const {RECHARGE_MAXIMUM_SUPPLY_KRW}=await import('@devslab-kr/pay-contract');
+  for(const supplyKrw of [RECHARGE_MAXIMUM_SUPPLY_KRW+1000,Number.MAX_SAFE_INTEGER,1500,999,0,-1000,'1000',1000.5])
+   expect(await a.dispatch({action:'createOrder',scope:self,operationId:'amount:'+String(supplyKrw).replace(/[^0-9]/g,'n'),supplyKrw,connection,ledger} as unknown as PayCommand)).toMatchObject({ok:false,status:400,error:{code:'invalid_input'}});
+  expect(await a.dispatch({action:'createOrder',scope:self,operationId:'amount:total',supplyKrw:1000,totalKrw:1,connection,ledger} as unknown as PayCommand)).toMatchObject({ok:false,status:400});
+  await expect(store.create(self,'amount:store-over',RECHARGE_MAXIMUM_SUPPLY_KRW+1000,connection,ledger,fingerprints)).rejects.toMatchObject({status:400});
+  expect(await db.prepare("SELECT COUNT(*) AS n FROM payment_orders WHERE idempotency_key LIKE 'amount:%'").first('n')).toBe(0);
+  expect(await created(self,'amount:max',RECHARGE_MAXIMUM_SUPPLY_KRW,connection,ledger,fingerprints)).toMatchObject({supply_krw:1000000,vat_krw:100000,total_krw:1100000});
+ });
+});
+
+describe('refund needs fresh authority, the order scope and a wallet hold first (real D1, scripted boundaries)',()=>{
+ it('denies refunds without current authority or outside the order scope and leaves the order untouched',async()=>{
+  const row=await created(self,'refund-guard:scope',1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'refund-guard-key');await store.transition(row.id,'credited',['created']);
+  const {PayApplication}=await import('../src/service'),a=new PayApplication({DB:db,PAY_EXTERNAL_ACTIONS_ENABLED:'true'});
+  expect(await a.dispatch({action:'refundOrder',scope:self,id:row.id,reason:'Customer'})).toMatchObject({ok:false,status:503,error:{code:'effect_authority_required'}});
+  expect(await a.dispatch({action:'refundOrder',scope:self,id:row.id,reason:'Customer'},{check:async()=>false})).toMatchObject({ok:false,status:403,error:{code:'effect_authority_denied'}});
+  for(const scope of [{...self,subject:'bob'},{...owner,companyId:'company-b'}])
+   expect(await a.dispatch({action:'refundOrder',scope,id:row.id,reason:'Customer'},{check:async()=>true})).toMatchObject({ok:false,status:404});
+  expect(await store.load(self,row.id)).toMatchObject({state:'credited',refund_reason:null,provider_refund_id:null});
+ });
+ it.each([
+  ['the hold call fails',async():Promise<LedgerReceipt>=>{throw Error('ledger timeout');}],
+  ['the hold is not reserved',async(o:StoredOrder,id:string):Promise<LedgerReceipt>=>({operationId:id,companyId:o.company_id,supplyKrw:o.supply_krw,state:'released'})],
+  ['the hold is for another amount',async(o:StoredOrder,id:string):Promise<LedgerReceipt>=>({operationId:id,companyId:o.company_id,supplyKrw:o.supply_krw+1000,state:'reserved'})],
+ ])('never cancels at the provider when %s',async(name,reserveRefund)=>{
+  const key=name.replace(/[^a-z]/g,'-'),row=await created(self,'refund-guard:'+key,1000,connection,ledger,fingerprints);await store.bindPayment(self,row.id,'refund-guard-'+key);await store.transition(row.id,'credited',['created']);
+  let provider=0;const {refundPayment}=await import('../src/payments');
+  const result=await refundPayment(store,self,await store.load(self,row.id),'Customer',boundaries({gateway:{cancel:async()=>{provider++;throw Error('must not cancel');},lookup:async()=>{provider++;throw Error('must not look up');}},ledger:{reserveRefund}}));
+  expect(result).toMatchObject({state:'refund_unknown',refund_reason:'Customer',provider_refund_id:null});expect(provider).toBe(0);
  });
 });
