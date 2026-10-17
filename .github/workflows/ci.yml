@@ -5,9 +5,10 @@ on:
     branches: [main]
 permissions:
   contents: read
+# Cancel superseded pull request runs; main verification runs finish normally.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   verify:
     runs-on: ubuntu-latest
