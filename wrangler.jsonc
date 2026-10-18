@@ -14,7 +14,8 @@
     }
   ],
   "vars": {
-    "PAY_EXTERNAL_ACTIONS_ENABLED": "false"
+    "PAY_EXTERNAL_ACTIONS_ENABLED": "false",
+    "PAY_CONNECTION_VERIFICATION_ENABLED": "true"
   },
   "observability": {
     "logs": {

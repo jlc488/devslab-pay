@@ -1,6 +1,6 @@
 {
   "name": "@devslab-kr/pay-ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Presentational React components for DevsLab Pay data: recharge amount, order history, order summary and test wallet.",
   "type": "module",
   "license": "UNLICENSED",
@@ -30,7 +30,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@devslab-kr/pay-contract": "0.2.0"
+    "@devslab-kr/pay-contract": "0.3.0"
   },
   "peerDependencies": {
     "@devslab/dds-react": "^0.21.2",

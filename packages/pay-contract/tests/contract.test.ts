@@ -129,3 +129,25 @@ describe('order amounts (0.2.0)',()=>{
   expect(calculateRecharge(RECHARGE_MAXIMUM_SUPPLY_KRW+1000).supplyKrw).toBe(1001000);
  });
 });
+
+describe('payment connections (0.3.0): only the MID, a 4-character hint and a fingerprint cross the wire',()=>{
+ const view={id:'pcv_'+'a'.repeat(32),provider:'toss',environment:'test',version:2,status:'active',merchantId:'tvivarepublica',clientKeyHint:'0001',fingerprint:'b'.repeat(64),createdAt:'2026-10-18T00:00:00.000Z',revokedAt:null};
+ const old={...view,id:'pcv_'+'c'.repeat(32),version:1,status:'revoked',revokedAt:'2026-10-18T01:00:00.000Z'};
+ it('accepts test keys only and refuses live, widget and billing variants',async()=>{
+  const {isTossTestClientKey,isTossTestSecretKey,isTossMerchantId}=await import('../src/index.js');
+  expect(isTossTestClientKey('test_ck_FAKEclient0001')).toBe(true);expect(isTossTestSecretKey('test_sk_FAKEsecret0001')).toBe(true);
+  for(const key of ['live_ck_FAKEclient0001','test_gck_FAKEclient0001','test_ck_','test_ck_ FAKE0001'])expect(isTossTestClientKey(key)).toBe(false);
+  for(const key of ['live_sk_FAKEsecret0001','test_gsk_FAKEsecret0001','test_sk_','test_ck_FAKEclient0001'])expect(isTossTestSecretKey(key)).toBe(false);
+  for(const mid of ['tvivarepublica','mid_01-a'])expect(isTossMerchantId(mid)).toBe(true);
+  for(const mid of ['x','mid with space','m'.repeat(65),'https://x'])expect(isTossMerchantId(mid)).toBe(false);
+ });
+ it('parses views and state, drops unknown fields and rejects any key-shaped extra or inconsistent state',async()=>{
+  const {parsePaymentConnectionView,parsePaymentConnectionState}=await import('../src/index.js');
+  expect(parsePaymentConnectionView({...view,secretKey:'test_sk_FAKEsecret0001'})).toEqual(view);
+  expect(parsePaymentConnectionState({companyId:'company-a',active:view,history:[view,old]})).toEqual({companyId:'company-a',active:view,history:[view,old]});
+  for(const bad of [{...view,clientKeyHint:'test_ck_FAKEclient0001'},{...view,status:'revoked'},{...old,revokedAt:null},{...view,id:'toss-registry-id'},{...view,environment:'live'}])
+   expect(()=>parsePaymentConnectionView(bad)).toThrow(expect.objectContaining(invalidResponse));
+  for(const bad of [{companyId:'company-a',active:null,history:[view]},{companyId:'company-a',active:view,history:[old,view]},{companyId:'company-a',active:view,history:[view,{...old,status:'active',revokedAt:null}]}])
+   expect(()=>parsePaymentConnectionState(bad)).toThrow(expect.objectContaining(invalidResponse));
+ });
+});

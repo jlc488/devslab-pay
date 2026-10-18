@@ -5,3 +5,4 @@ export {calculateRecharge,calculateOrderRecharge,type RechargeAmounts} from './p
 export * from './returns.js';
 export {canonicalJson,sha256Hex,importDigest,checkoutStateHash,type ImportDigestInput} from './digest.js';
 export {parsePublicOrder,parseOrderPage,parseCapabilities,parseCheckoutPreparation,parseCheckoutCaptureResult} from './parsers.js';
+export * from './connections.js';

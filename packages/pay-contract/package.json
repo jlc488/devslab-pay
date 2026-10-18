@@ -1,6 +1,6 @@
 {
   "name": "@devslab-kr/pay-contract",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Versioned wire contract for DevsLab Pay: RPC types, constants, the import digest and response parsers.",
   "type": "module",
   "license": "UNLICENSED",

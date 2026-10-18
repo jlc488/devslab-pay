@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { PublicOrder } from "@devslab-kr/pay-contract";
-import { OrderHistory, OrderSummary, RechargeAmount, TestWalletSummary, rechargeAmounts, type Loadable, type OrderPageView } from "../src/index.js";
+import { OrderHistory, OrderSummary, PaymentConnectionView, RechargeAmount, TestWalletSummary, rechargeAmounts, type Loadable, type OrderPageView, type PaymentConnectionActions, type PaymentConnectionSnapshot } from "../src/index.js";
 
 const order = (id: string, state: PublicOrder["state"], supplyKrw = 1000): PublicOrder => ({
   mode: "test", purpose: "messaging_recharge", id, companyId: "company-a", orderId: `order-${id}`, operationId: `op-${id}`,
@@ -34,9 +34,17 @@ describe("RechargeAmount", () => {
     expect(screen.getByText("1,000원 이상, 1,000원 단위로 입력하세요.")).toBeTruthy();
     expect(list.textContent).not.toContain("원");
   });
-  it("applies the app's ceiling", () => {
-    render(<Controlled initial="200000000" maxSupplyKrw={100_000_000} />);
-    expect(screen.getByText("한 번에 100,000,000원까지 충전할 수 있습니다.")).toBeTruthy();
+  it("shows Pay's per-order maximum and refuses more, below which an app may set a lower ceiling", () => {
+    expect(rechargeAmounts("1000000")).toMatchObject({ supplyKrw: 1_000_000, totalKrw: 1_100_000 });
+    expect(rechargeAmounts("1001000")).toBeNull();
+    const { unmount } = render(<Controlled initial="1001000" />);
+    expect(screen.getByText("한 번에 1,000,000원까지 충전할 수 있습니다.")).toBeTruthy();
+    unmount();
+    render(<Controlled initial="1000" />);
+    expect(screen.getByText("1,000원 이상 · 1,000원 단위 · 최대 1,000,000원")).toBeTruthy();
+    cleanup();
+    render(<Controlled initial="60000" maxSupplyKrw={50_000} />);
+    expect(screen.getByText("한 번에 50,000원까지 충전할 수 있습니다.")).toBeTruthy();
   });
 });
 
@@ -90,5 +98,58 @@ describe("OrderSummary and TestWalletSummary", () => {
   it("shows the three test wallet amounts", () => {
     render(<TestWalletSummary wallet={{ mode: "test", availableKrw: 5000, reservedKrw: 1000, refundedKrw: 2000 }} />);
     for (const text of ["5,000원", "1,000원", "2,000원"]) expect(screen.getByText(text)).toBeTruthy();
+  });
+});
+
+describe("PaymentConnectionView", () => {
+  const active = { id: "pcv_" + "a".repeat(32), provider: "toss", environment: "test", version: 2, status: "active", merchantId: "tvivarepublica", clientKeyHint: "0001", fingerprint: "b".repeat(64), createdAt: "2026-10-18T01:02:03.000Z", revokedAt: null } as const;
+  const old = { ...active, id: "pcv_" + "c".repeat(32), version: 1, status: "superseded" } as const;
+  const base: PaymentConnectionSnapshot = { data: { companyId: "company-a", active, history: [active, old] }, loading: false, busy: null, error: "", notice: "", merchantId: "", clientKey: "", secretKey: "", pending: null };
+  function actions(patch: Partial<PaymentConnectionActions> = {}): PaymentConnectionActions {
+    return { canSubmit: false, load: vi.fn(), setMerchantId: vi.fn(), setClientKey: vi.fn(), setSecretKey: vi.fn(), connect: vi.fn(), ask: vi.fn(), cancel: vi.fn(), confirm: vi.fn(), ...patch };
+  }
+  it("says it is a test account, names the MID and the order maximum, and shows only the client-key hint", () => {
+    render(<PaymentConnectionView snapshot={base} ready actions={actions()} />);
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("테스트");expect(text).toContain("실제 돈이 오가는 결제는 아직 할 수 없습니다");expect(text).toContain("1,000,000원");
+    expect(screen.getByText("상점 ID (MID)", { selector: "dt" })).toBeTruthy();
+    expect(screen.getByLabelText("상점 ID (MID)")).toBeTruthy();
+    expect(text).toContain("····0001");expect(text).not.toContain("b".repeat(64));
+    expect((screen.getByLabelText("시크릿 키") as HTMLInputElement).type).toBe("password");
+  });
+  it("explains a wrong key in words and submits only a valid form", async () => {
+    const connect = vi.fn();
+    const { rerender } = render(<PaymentConnectionView snapshot={{ ...base, secretKey: "live_sk_FAKE0001" }} ready actions={actions({ connect })} />);
+    expect(screen.getByText(/test_sk_ 로 시작하는 테스트 시크릿 키/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "새 키로 교체" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<PaymentConnectionView snapshot={{ ...base, merchantId: "tvivarepublica", clientKey: "test_ck_FAKEclient0001", secretKey: "test_sk_FAKEsecret0001" }} ready actions={actions({ connect, canSubmit: true })} />);
+    await userEvent.click(screen.getByRole("button", { name: "새 키로 교체" }));
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+  it("asks before revoking the active or an older version", async () => {
+    const ask = vi.fn();
+    render(<PaymentConnectionView snapshot={base} ready actions={actions({ ask })} />);
+    await userEvent.click(screen.getByRole("button", { name: "연결 해제" }));
+    expect(ask).toHaveBeenLastCalledWith({ kind: "revoke", connectionId: active.id, version: 2, status: "active" });
+    await userEvent.click(screen.getByRole("button", { name: "이 버전 해제" }));
+    expect(ask).toHaveBeenLastCalledWith({ kind: "revoke", connectionId: old.id, version: 1, status: "superseded" });
+    cleanup();
+    const confirm = vi.fn();
+    render(<PaymentConnectionView snapshot={{ ...base, pending: { kind: "revoke", connectionId: old.id, version: 1, status: "superseded" } }} ready actions={actions({ confirm })} />);
+    expect(screen.getByText("버전 1을 해제할까요?")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "이 버전 해제" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the frame for not ready, loading, failed and empty states", async () => {
+    const load = vi.fn();
+    const { rerender } = render(<PaymentConnectionView snapshot={base} ready={false} actions={actions()} notReadyText="준비 중" />);
+    expect(screen.getByText("준비 중")).toBeTruthy();expect(screen.queryByLabelText("시크릿 키")).toBeNull();
+    rerender(<PaymentConnectionView snapshot={{ ...base, data: null, loading: true }} ready actions={actions()} />);
+    expect(screen.getByRole("status").textContent).toContain("불러오고");
+    rerender(<PaymentConnectionView snapshot={{ ...base, data: null }} ready actions={actions({ load })} />);
+    await userEvent.click(screen.getByRole("button", { name: "다시 조회" }));expect(load).toHaveBeenCalled();
+    rerender(<PaymentConnectionView snapshot={{ ...base, data: { companyId: "company-a", active: null, history: [] } }} ready actions={actions()} />);
+    expect(screen.getByText(/아직 사용 중인 Toss 테스트 계정이 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "연결하고 확인" })).toBeTruthy();
   });
 });

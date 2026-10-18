@@ -7,6 +7,8 @@ import {
  type PaymentCapabilities,type PaymentState,type PublicOrder,type ScopedPayCommand,
  CHECKOUT_RETURN_REGISTRY,RECHARGE_MAXIMUM_SUPPLY_KRW,calculateOrderRecharge,checkoutReturnUrl,isCheckoutReturn,resolveCheckoutReturn,
  type CheckoutReturn,type CheckoutCaptureResult,
+ parsePaymentConnectionState,parsePaymentConnectionView,isTossTestClientKey,isTossTestSecretKey,isTossMerchantId,
+ type PaymentConnectionState,type PaymentConnectionView,
 } from '@devslab-kr/pay-contract';
 
 declare const binding:PayBinding;
@@ -45,4 +47,11 @@ const legacyRedirect:string = checkoutReturnUrl(legacyCapture);
 const contractOrigin:string = CHECKOUT_RETURN_REGISTRY.contract.origin;
 const isEntry:boolean = isCheckoutReturn(body);
 const max:number = calculateOrderRecharge(RECHARGE_MAXIMUM_SUPPLY_KRW).supplyKrw;
-void [run,order,state,first,caps,pricing,checkout,capture,total,url,path,code,back,prepareTo,redirect,legacyRedirect,contractOrigin,isEntry,max];
+// 0.3.0 additions: connection commands and views.
+const connectCommand:PayCommand = {action:'connectConnection',scope:{...scope,access:'company'},merchantId:'mid',clientKey:'test_ck_x',secretKey:'test_sk_x'};
+const revokeCommand:PayCommand = {action:'revokeConnection',scope:{...scope,access:'company'},connectionId:'pcv_x'};
+const connections:PaymentConnectionState = parsePaymentConnectionState(body);
+const hint:string|undefined = connections.active?.clientKeyHint;
+const connectionView:PaymentConnectionView = parsePaymentConnectionView(body);
+const validKeys:boolean = isTossTestClientKey(body)&&isTossTestSecretKey(body)&&isTossMerchantId(body);
+void [run,order,state,first,caps,pricing,checkout,capture,total,url,path,code,back,prepareTo,redirect,legacyRedirect,contractOrigin,isEntry,max,connectCommand,revokeCommand,hint,connectionView,validKeys];
