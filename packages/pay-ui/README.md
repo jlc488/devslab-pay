@@ -8,12 +8,13 @@ The components only render what they are given and report what the user did. The
 
 | Component | Props | Renders |
 |---|---|---|
-| `RechargeAmount` | `value` (text), `onChange`, `label?`, `disabled?`, `maxSupplyKrw?` | The supply-amount field (1,000원 이상 · 1,000원 단위) with the balance / VAT / total breakdown beside it, computed with the contract's `calculateRecharge` |
+| `RechargeAmount` | `value` (text), `onChange`, `label?`, `disabled?`, `maxSupplyKrw?` (an app ceiling below Pay's) | The supply-amount field (1,000원 이상 · 1,000원 단위 · 최대 1,000,000원 since 0.2.0) with the balance / VAT / total breakdown beside it, computed with the contract's `calculateOrderRecharge` |
 | `RechargeBreakdown` | `amounts` or `null` | The three-line breakdown on its own; rows keep a dash while the amount is invalid |
 | `OrderHistory` | `state: Loadable<{ items; nextCursor }>`, `onSelect?(order)`, `onLoadMore?(cursor)`, `busy?`, `title?`, `actions?` (buttons beside the title), `emptyText?` | Orders with state pills, supply / VAT / total, order number, "주문 보기" and "이전 결제 내역 더 보기" |
 | `OrderSummary` | `order`, `title?`, `children` (the app's buttons) | One order: state, order number, the amount split and a do-not-pay-again note while it settles |
 | `TestWalletSummary` | `wallet: TestWallet`, `title?` | Test balance, amount held for refunds, refunded total |
-| `PaymentStatePill`, `Pill` | `state` / `tone` | DDS badges with a label (a state a later Pay version adds reads "상태 확인 필요") |
+| `PaymentConnectionView` (0.2.0) | `snapshot` (state, typed fields, busy/error/notice, pending revoke), `ready`, `actions` (load, set fields, connect, ask, cancel, confirm), `notReadyText?`, `formNote?`, `summaryExtra?` | The company's Toss **test** account: summary (MID, client-key hint, version), connect/replace form (MID, client key, secret key on one grid row), version history with revoke and a confirm step. States that live payments are not possible and the 1,000,000원 per-order maximum. The app owns the requests and clears the typed keys after submit |
+| `PaymentStatePill`, `Pill`, `PaymentConnectionStatusPill` | `state` / `tone` | DDS badges with a label (a state a later Pay version adds reads "상태 확인 필요") |
 
 `Loadable<T>` is the state the history takes:
 
@@ -25,7 +26,7 @@ type Loadable<T> =
   | { status: "ready"; data: T };
 ```
 
-Helpers: `rechargeAmounts(raw, maxSupplyKrw?)`, `paymentStateLabel`, `SETTLING_PAYMENT_STATES`, `formatKrw`, `formatKstDateTime`.
+Helpers: `rechargeAmounts(raw, maxSupplyKrw?)`, `paymentConnectionProblem`, `isPaymentConnectionInput`, `maskedClientKeyHint`, `paymentStateLabel`, `SETTLING_PAYMENT_STATES`, `formatKrw`, `formatKstDateTime`.
 
 ## Styles
 
@@ -43,7 +44,7 @@ Every class is prefixed `dl-pay-*` and every value is a DDS token. Tables, badge
 Published to GitHub Packages (see the [pay-contract README](../pay-contract/README.md) for `.npmrc` and the token):
 
 ```sh
-npm install --save-exact @devslab-kr/pay-ui@0.1.0
+npm install --save-exact @devslab-kr/pay-ui@0.2.0 @devslab-kr/pay-contract@0.3.0
 ```
 
 Peer dependencies: `react` 19 and `@devslab/dds-react` ^0.21.2. The package ships compiled ESM with declarations and `dist/styles.css`.

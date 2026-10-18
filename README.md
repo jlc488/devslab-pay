@@ -2,7 +2,7 @@
 
 Private Cloudflare Worker payment capability for Admin. `PayService.dispatch(PayCommand)` is the only financial entrypoint. Admin owns authentication, companies, memberships and current integration assignments; it derives `scope` after fresh authorization. Bind only Admin to named entrypoint `PayService`. The default public Worker serves four published policy pages; the named entrypoint HTTP handler returns 404.
 
-No account ID, route, production D1 ID, service binding or secret is configured. The included dummy D1 ID is local only. External financial actions default OFF. This repository does not create credentials or enable Toss/Notify. Live and legacy simulation execution are unavailable.
+No account ID, route, production D1 ID, service binding or secret is configured; the connection master key is a Secrets Store binding the owner adds. The included dummy D1 ID is local only. External financial actions default OFF. This repository does not create credentials or enable Toss/Notify. Live and legacy simulation execution are unavailable.
 
 ## Wire contract package
 
@@ -12,11 +12,27 @@ The RPC types, error codes, pricing, formats, checkout callback URLs, import dig
 
 Node >=24.12.0. `npm ci`, `npm test`, `npm run typecheck`, `npm run build` (Wrangler dry run only), `npm run db:migrate:local`, `npm run dev`, `npm run pack:contract` (checks the package file list without publishing). `typecheck`, `test`, `build` and `dev` build the contract package first. Tests use one Vitest worker, one real local Miniflare D1 schema setup, blocked outbound traffic and isolated test data. The pinned workerd supports compatibility date 2026-10-13; it rejects 2026-10-15, so the config uses the supported date. No shared node_modules junction is used.
 
-## Server registry contract
+## Company payment connections (connection vault)
 
-`PAY_CREDENTIAL_REGISTRY_JSON` is a JSON object keyed by bounded registered credentialSetId. Exact payment descriptor: `{companyId,provider:'toss',environment:'test',purpose:'payment',providerAccountId,secretBinding,clientKeyBinding}`. Binding names must use `PAY_TOSS_TEST_SECRET_[A-Z0-9_]+` and `PAY_TOSS_TEST_CLIENT_[same suffix]`. Exact ledger descriptor: `{companyId,provider:'notify',environment:'test',purpose:'ledger',workspaceId,secretBinding}`; binding name must use `PAY_NOTIFY_TEST_LEDGER_[A-Z0-9_]+`. Runtime only reads these typed prefixes. No AUTH, OTP, reader binding or arbitrary URL/header is accepted.
+Each company registers its own Toss **test** account from Admin (회사 › 결제 연결). There is no env-JSON payment registry any more: `PAY_CREDENTIAL_REGISTRY_JSON` is retired and never read.
 
-Each descriptor binds one explicit company and merchant/workspace. Pay resolves and hashes secret material; Admin receives only private readiness/fingerprint metadata. Preserve every versioned registered reference and its secret binding until historical intents resolve. New connection defaults do not retarget saved orders. Changed material under the same reference fails fingerprint checks. Unknown retired references fail closed. Keys never enter public DTOs or logs. General Toss test keys must have test_sk_/test_ck_ prefixes; live/billing key variants are refused. No credentials are included in this document or config.
+- RPC (pay-contract 0.3.0): `connectionState`, `connectConnection {merchantId, clientKey, secretKey}`, `revokeConnection {connectionId}`. All need `scope.access: 'company'` (Admin passes it only for the owner); the two writes also need the effect authority, checked before the Toss call and again before storing.
+- Verification: formats first (`test_ck_`/`test_sk_` general test keys only, MID `[A-Za-z0-9_-]{2,64}`), then one read-only call to the fixed Toss API, `GET /v1/payments/orders/{random id}` with the secret key. 404 `NOT_FOUND_PAYMENT` means the key is valid (nothing is created); 401 `UNAUTHORIZED_KEY` or 400 `INVALID_API_KEY` is `payment_credentials_invalid`; anything else is 503. A refused key is not stored. Toss has no endpoint that names a key's MID or pairs a client key with a secret key, so those cannot be verified at registration: the MID is enforced on every provider receipt (`mId` must equal it before anything is credited) and the client key only by format.
+- Verification has its own switch `PAY_CONNECTION_VERIFICATION_ENABLED` (`"true"` in `wrangler.jsonc`), separate from `PAY_EXTERNAL_ACTIONS_ENABLED`, so registering works while checkout stays off.
+- Vault: Secrets Store binding `PAY_CONNECTION_MASTER_KEY` (secret `pay-connection-master-key`, 32 random bytes base64url). A per-connection random data key encrypts `{clientKey, secretKey}` with AES-256-GCM and is wrapped under the master key; both layers use the additional data `pay-connection:v1:<companyId>:<connectionId>:<version>`. Format `m1.<wrapIv>.<wrappedKey>.<iv>.<ciphertext>`. Without a usable master key, registering and every resolution answer 503 and nothing is sent to Toss.
+- Versions (migration 0003, `payment_connections`): one `active` row per company (partial unique index); a new connection supersedes it in the same batch; status moves only forward (active → superseded → revoked, or active → revoked); material columns are immutable and rows are never deleted. `payment_connection_audit` is append-only; its evidence is provider, version, MID, client-key hint and fingerprint.
+- Exposure: only the MID, the last 4 characters of the client key and a SHA-256 fingerprint (over company, MID and both keys). Keys never appear in a response, log, error or audit row.
+- Use: `ConnectionSnapshot.credentialSetId` is the version ID (`pcv_…`) and `providerAccountId` its MID. Readiness and new orders need the active version; an existing order's checkout and confirmation also finish under a superseded one; lookup reconcile, refund and legacy import also run under a revoked one, so money already taken can still be confirmed or returned. Orders keep the version's fingerprint; a mismatch fails closed.
+
+Production binding (owner config, not in this repository):
+
+```jsonc
+"secrets_store_secrets": [{"binding": "PAY_CONNECTION_MASTER_KEY", "store_id": "<store id>", "secret_name": "pay-connection-master-key"}]
+```
+
+## Notify test-ledger registry
+
+The Notify test-wallet credential stays a server registry until the ledger moves to token exchange. `PAY_LEDGER_REGISTRY_JSON` (renamed from `PAY_CREDENTIAL_REGISTRY_JSON`, ledger entries only) is a JSON object keyed by credentialSetId with exactly `{companyId,provider:'notify',environment:'test',purpose:'ledger',workspaceId,secretBinding}`; the binding name must use `PAY_NOTIFY_TEST_LEDGER_[A-Z0-9_]+`. Changed material under the same reference fails fingerprint checks; unknown references fail closed. No credentials are included in this document or config.
 
 ## Import and single writer protocol
 

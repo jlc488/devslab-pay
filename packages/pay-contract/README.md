@@ -15,7 +15,8 @@ Pay itself compiles against this package: its RPC entrypoint and handlers use th
 | Checkout | `CHECKOUT_STATE_LENGTH` (43)/`CHECKOUT_STATE_PATTERN`/`isCheckoutState`, `CHECKOUT_STATE_HASH_PATTERN`, `CHECKOUT_CALLBACK_ORIGIN`, `CHECKOUT_CALLBACK_PATHS`, `checkoutCallbackUrl`, `CHECKOUT_ORDER_NAME` |
 | Checkout return (0.2.0) | `CHECKOUT_RETURN_REGISTRY`, `CheckoutReturn`, `DEFAULT_CHECKOUT_RETURNS`, `isCheckoutReturnService`, `isCheckoutReturn`, `resolveCheckoutReturn`, `checkoutReturnUrl`, `CHECKOUT_RETURN_ID_PATTERN` |
 | Digests | `canonicalJson`, `sha256Hex`, `importDigest` (+ `ImportDigestInput`), `checkoutStateHash` |
-| Response parsers | `parsePublicOrder`, `parseOrderPage`, `parseCapabilities`, `parseCheckoutPreparation`, `parseCheckoutCaptureResult` |
+| Response parsers | `parsePublicOrder`, `parseOrderPage`, `parseCapabilities`, `parseCheckoutPreparation`, `parseCheckoutCaptureResult`, `parsePaymentConnectionView`, `parsePaymentConnectionState` (0.3.0) |
+| Payment connections (0.3.0) | `PaymentConnectionView`, `PaymentConnectionState`, `PAYMENT_CONNECTION_STATUSES`, `TOSS_TEST_CLIENT_KEY_PATTERN`, `TOSS_TEST_SECRET_KEY_PATTERN`, `TOSS_MERCHANT_ID_PATTERN`, `PAYMENT_CONNECTION_ID_PATTERN`, `isTossTestClientKey`, `isTossTestSecretKey`, `isTossMerchantId`, `isPaymentConnectionId` |
 
 Everything is pure and has no runtime dependencies. It runs in Workers, Node (24+) and browsers; the digests use Web Crypto.
 
@@ -39,7 +40,7 @@ if (order.ok) {
 }
 ```
 
-Not part of the contract: Pay's D1 store and migrations, the credential registry and secret bindings, the Toss gateway and its receipt parsing, the Notify test-ledger client, the effect-authority implementation and the policy fetcher.
+Not part of the contract: Pay's D1 store and migrations, the connection vault, the ledger registry and secret bindings, the Toss gateway and its receipt parsing, the Notify test-ledger client, the effect-authority implementation and the policy fetcher.
 
 ## Install
 
@@ -53,7 +54,7 @@ The package is published to GitHub Packages, not npmjs.com. In the consuming rep
 `NODE_AUTH_TOKEN` must be a token that can read `@devslab-kr` packages (a classic personal access token with `read:packages`; GitHub Packages does not accept fine-grained tokens for npm). In CI, store it as a repository secret and pass it to `npm ci` as `NODE_AUTH_TOKEN`.
 
 ```sh
-npm install --save-exact @devslab-kr/pay-contract@0.2.0
+npm install --save-exact @devslab-kr/pay-contract@0.3.0
 ```
 
 The package ships compiled ESM (`dist/*.js`) with declarations (`dist/*.d.ts`). It is checked against a consumer using TypeScript 7 with `moduleResolution: "bundler"` and `strict`, without `exactOptionalPropertyTypes` or `noUncheckedIndexedAccess`.

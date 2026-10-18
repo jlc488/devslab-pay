@@ -4,6 +4,7 @@
  */
 import type {PAYMENT_STATES} from './constants.js';
 import type {CheckoutReturn} from './returns.js';
+import type {PaymentConnectionState,PaymentConnectionView} from './connections.js';
 export type PaymentState = typeof PAYMENT_STATES[number];
 export interface PayScope {subject:string;companyId:string;access:'self'|'company'}
 export interface ConnectionSnapshot {id:string;companyId:string;revision:string;provider:'toss';environment:'test';providerAccountId:string;credentialSetId:string}
@@ -42,6 +43,16 @@ export type ScopedPayCommand = Scoped & (
  | {action:'importStatus';id:string;ownership:OwnershipFence}
  | {action:'activateImport';id:string;ownership:OwnershipFence;sourceCommitted:SourceCommittedProof}
  | {action:'abortImport';id:string;ownership:OwnershipFence}
+ /** Since 0.3.0. The company's registered Toss test account versions. Needs `access: 'company'`. */
+ | {action:'connectionState'}
+ /**
+  * Since 0.3.0. Registers a new version of the company's own Toss test account. Needs `access: 'company'`
+  * and the effect authority. Pay verifies the secret key with one read-only Toss call before storing
+  * anything; a refused key is `payment_credentials_invalid` and nothing is stored. The keys never come back.
+  */
+ | {action:'connectConnection';merchantId:string;clientKey:string;secretKey:string}
+ /** Since 0.3.0. Revokes one version (active or superseded). Needs `access: 'company'` and the effect authority. */
+ | {action:'revokeConnection';connectionId:string}
 );
 export interface CheckoutPreparation {companyId:string;id:string;mode:'test';provider:'toss';kind:'general-test';clientKey:string;customerKey:string;orderId:string;amount:{currency:'KRW';value:number};orderName:'DevsLab 문자 충전 테스트';successUrl:string;failUrl:string;expiresAt:string}
 /** `returnTo` (since 0.2.0): the registry entry saved at prepareCheckout. Pay always sends it; build the redirect with `checkoutReturnUrl`. */
@@ -50,7 +61,7 @@ export type CheckoutCallback = {outcome:'success';state:string;paymentKey:string
 
 export type PayCommand = ScopedPayCommand|({action:'captureCheckoutCallback'} & CheckoutCallback)|{action:'checkoutCaptureStatus';stateHash:string};
 export interface ConnectionInspection {companyId:string;connectionId:string;revision:string;configured:boolean;fingerprint:string|null;reasonCode:string|null}
-export type PayResult = CheckoutPreparation|CheckoutCaptureResult|ConnectionInspection|PaymentCapabilities|PaymentConfig|OrderPage|PublicOrder|ImportReceipt;
+export type PayResult = CheckoutPreparation|CheckoutCaptureResult|ConnectionInspection|PaymentCapabilities|PaymentConfig|OrderPage|PublicOrder|ImportReceipt|PaymentConnectionState|PaymentConnectionView;
 export type PayResponse = {ok:true;result:PayResult}|{ok:false;status:400|401|403|404|405|409|503;error:{code:string;message:string}};
 export interface PayEffectAuthority {check():Promise<boolean>}
 export interface PayBinding {dispatch(command:PayCommand,effectAuthority?:PayEffectAuthority):Promise<PayResponse>}

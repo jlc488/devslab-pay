@@ -44,6 +44,15 @@ try{
  assert.equal(financial.result.status,503);assert.ok(financial.checks>=1);assert.equal(financial.closedDenied,true);
  assert.equal(await db.prepare('SELECT COUNT(*) AS n FROM payment_orders').first('n'),0);
  assert.equal(outbound,0);
+ // pay-contract 0.3.0 connection commands over the real named entrypoint: no master key configured, so
+ // registering fails closed before any Toss call, and the empty state is readable by a company scope only.
+ const companyScope={...scope,access:'company'};
+ const empty=await dispatch({action:'connectionState',scope:companyScope});
+ assert.deepEqual(empty.result,{ok:true,result:{companyId:scope.companyId,active:null,history:[]}});
+ const register=await dispatch({action:'connectConnection',scope:companyScope,merchantId:'fixture-mid',clientKey:'test_ck_FAKEbuiltclient',secretKey:'test_sk_FAKEbuiltsecret'});
+ assert.equal(register.result.status,503);assert.ok(!JSON.stringify(register).includes('FAKEbuilt'));
+ assert.equal(await db.prepare('SELECT COUNT(*) AS n FROM payment_connections').first('n'),0);
+ assert.equal(outbound,0);
 
  const now=new Date().toISOString(),state=Buffer.alloc(32,7).toString('base64url'),stateHash=createHash('sha256').update(state).digest('hex');
  const connection={id:'fixture-pay',companyId:scope.companyId,revision:'1',provider:'toss',environment:'test',providerAccountId:'fixture-merchant',credentialSetId:'fixture-ref'};
@@ -60,5 +69,5 @@ try{
  const publicOrder=await dispatch({action:'getOrder',scope,id:'built-callback-order'});assert.ok(!JSON.stringify(publicOrder).includes('built-private-fixture'));
  assert.equal(outbound,0);
 
- console.log('Built Pay RPC PASS: actual named WorkerEntrypoint, ephemeral RpcTarget serialization/closing, real local D1, HTTP404/policy503, unavailable financial gate, zero outbound.');
+ console.log('Built Pay RPC PASS: actual named WorkerEntrypoint, ephemeral RpcTarget serialization/closing, real local D1, HTTP404/policy503, unavailable financial gate, zero outbound, connection vault closed without a master key.');
 }finally{await runtime.dispose();}

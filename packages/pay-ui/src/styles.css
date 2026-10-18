@@ -243,3 +243,137 @@
 @container (max-width: 520px) {
   .dl-pay-tiles { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Payment connection (since 0.2.0): one company's Toss test account. */
+.dl-pay-connection {
+  container-type: inline-size;
+  display: grid;
+  gap: var(--dds-space-32);
+  min-inline-size: 0;
+  font-family: var(--dds-font-family-sans);
+  color: var(--dds-color-text-primary);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.dl-pay-connection > .dl-pay-section + .dl-pay-section {
+  padding-block-start: var(--dds-space-32);
+  border-block-start: 1px solid var(--dds-color-border-default);
+}
+
+.dl-pay-inline-error,
+.dl-pay-inline-notice {
+  margin: 0;
+  padding: var(--dds-space-12) var(--dds-space-16);
+  border: 1px solid var(--dds-color-border-default);
+  border-radius: var(--dds-radius-md);
+  font-size: var(--dds-typo-body-2-font-size);
+  line-height: var(--dds-typo-body-2-line-height);
+}
+
+.dl-pay-inline-error {
+  border-color: var(--dds-color-status-danger);
+  background: var(--dds-color-status-danger-bg);
+}
+
+.dl-pay-inline-notice {
+  background: var(--dds-color-bg-subtle);
+}
+
+.dl-pay-facts--wide > div {
+  grid-template-columns: 8rem minmax(0, 1fr);
+}
+
+/* Three fields on one grid row (one column when narrow); every input is the same height. */
+.dl-pay-connection-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--dds-space-20) var(--dds-space-24);
+  align-items: start;
+  max-inline-size: 960px;
+}
+
+.dl-pay-connection-form > * {
+  min-inline-size: 0;
+}
+
+.dl-pay-connection-form .dds-field input {
+  inline-size: 100%;
+  box-sizing: border-box;
+  block-size: var(--dds-space-40);
+  min-block-size: 0;
+}
+
+.dl-pay-connection-form__actions {
+  grid-column: 1 / -1;
+  display: flex;
+}
+
+.dl-pay-confirm {
+  display: grid;
+  gap: var(--dds-space-12);
+  max-inline-size: 80ch;
+  padding: var(--dds-space-16);
+  border: 1px solid var(--dds-color-border-default);
+  border-radius: var(--dds-radius-md);
+}
+
+.dl-pay-confirm p {
+  margin: 0;
+}
+
+.dl-pay-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block-start: 1px solid var(--dds-color-border-default);
+}
+
+.dl-pay-history-row {
+  display: grid;
+  gap: var(--dds-space-12);
+  padding-block: var(--dds-space-8);
+  border-block-end: 1px solid var(--dds-color-border-default);
+}
+
+.dl-pay-history-row__line {
+  display: grid;
+  grid-template-columns: 4.5rem 4.5rem minmax(0, 10rem) 5.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--dds-space-12);
+  min-block-size: var(--dds-space-40);
+}
+
+.dl-pay-history-row__line > * {
+  justify-self: start;
+  min-inline-size: 0;
+}
+
+.dl-pay-history-row__line time {
+  color: var(--dds-color-text-secondary);
+  font-size: var(--dds-typo-caption-font-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.dl-pay-history-row__action {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  min-block-size: var(--dds-space-32);
+}
+
+.dl-pay-clip {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@container (max-width: 640px) {
+  .dl-pay-connection-form { grid-template-columns: minmax(0, 1fr); }
+  .dl-pay-facts--wide > div { grid-template-columns: 7rem minmax(0, 1fr); }
+  .dl-pay-history-row__line { grid-template-columns: 4.5rem auto minmax(0, 1fr); }
+  .dl-pay-history-row__line time { grid-column: 1 / -1; }
+  .dl-pay-history-row__action { grid-column: 1 / -1; justify-self: start; }
+}

@@ -6,3 +6,7 @@ export {
   OrderHistory, OrderSummary, TestWalletSummary,
   type OrderHistoryProps, type OrderSummaryProps, type OrderRow, type OrderPageView,
 } from "./orders.js";
+export {
+  PaymentConnectionView, PaymentConnectionStatusPill, paymentConnectionProblem, isPaymentConnectionInput, maskedClientKeyHint,
+  type PaymentConnectionSnapshot, type PaymentConnectionActions, type PaymentConnectionPendingAction, type PaymentConnectionViewProps,
+} from "./connection.js";

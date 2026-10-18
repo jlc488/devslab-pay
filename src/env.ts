@@ -1,13 +1,14 @@
 import type {PolicyEnv} from './policy';
-export type PaymentSecretBinding = `PAY_TOSS_TEST_SECRET_${string}`;
-export type PaymentClientBinding = `PAY_TOSS_TEST_CLIENT_${string}`;
+import type {RuntimeSecret} from './vault';
 export type LedgerSecretBinding = `PAY_NOTIFY_TEST_LEDGER_${string}`;
-/** Only declared local DB and optional future server bindings. No credentials are configured. */
+/** Only declared local DB and optional future server bindings. No credentials are configured in this repository. */
 export interface CredentialEnv {
- PAY_CREDENTIAL_REGISTRY_JSON?:string;
+ /** Secrets Store `pay-connection-master-key`: 32 random bytes, base64url. Wraps every connection's data key. */
+ PAY_CONNECTION_MASTER_KEY?:RuntimeSecret;
+ /** 'true' allows the one read-only Toss call that verifies a new connection's secret key. Separate from checkout. */
+ PAY_CONNECTION_VERIFICATION_ENABLED?:string;
+ PAY_LEDGER_REGISTRY_JSON?:string;
  NOTIFY_LOCAL_SERVICE?:{fetch(request:Request):Promise<Response>};
- [binding:PaymentSecretBinding]:string|undefined;
- [binding:PaymentClientBinding]:string|undefined;
  [binding:LedgerSecretBinding]:string|undefined;
 }
 

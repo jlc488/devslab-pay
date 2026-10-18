@@ -7,6 +7,7 @@ import type {PayScope,ConnectionSnapshot,LedgerSnapshot,LegacyPaymentOrder,Owner
 import type {StoredOrder} from '../src/store';
 import type {GatewayPayment,LedgerReceipt} from '../src/domain';
 import type {PaymentAdapters,PaymentGateway,PaymentLedger} from '../src/adapters';
+import {registerConnection,vaultEnv} from './connection-fixture';
 function boundaries(value:{gateway?:Partial<PaymentGateway>;ledger?:Partial<PaymentLedger>}):PaymentAdapters {
  const unexpected=async():Promise<never>=>{throw Error('Unexpected scripted boundary');};
  return {beforeEffect:()=>{},gateway:{confirm:unexpected,lookup:unexpected,cancel:unexpected,...value.gateway},ledger:{getCredit:unexpected,credit:unexpected,getRefund:unexpected,reserveRefund:unexpected,finalizeRefund:unexpected,wallet:unexpected,...value.ledger}};
@@ -124,9 +125,9 @@ describe('published wire contract parsers accept what Pay returns (real D1, no p
  it('parses actual capabilities, orders, pages, checkout preparation and capture results without loss',async()=>{
   const {PayApplication}=await import('../src/service');
   const contract=await import('@devslab-kr/pay-contract');
-  const c={...connection,id:'p-contract',credentialSetId:'toss-contract'},l={...ledger,integrationId:'n-contract',credentialSetId:'ledger-contract'};
-  const registry={[c.credentialSetId]:{companyId:'company-a',provider:'toss',environment:'test',purpose:'payment',providerAccountId:c.providerAccountId,secretBinding:'PAY_TOSS_TEST_SECRET_CONTRACT',clientKeyBinding:'PAY_TOSS_TEST_CLIENT_CONTRACT'},[l.credentialSetId]:{companyId:'company-a',provider:'notify',environment:'test',purpose:'ledger',workspaceId:l.workspaceId,secretBinding:'PAY_NOTIFY_TEST_LEDGER_CONTRACT'}};
-  const app=new PayApplication({DB:db,PAY_EXTERNAL_ACTIONS_ENABLED:'true',PAY_CREDENTIAL_REGISTRY_JSON:JSON.stringify(registry),PAY_TOSS_TEST_SECRET_CONTRACT:'test_sk_contractfixture',PAY_TOSS_TEST_CLIENT_CONTRACT:'test_ck_contractfixture',PAY_NOTIFY_TEST_LEDGER_CONTRACT:'contract-ledger-fixture'});
+  const c=(await registerConnection(db,'company-a',connection.providerAccountId,'Contract1')).connection,l={...ledger,integrationId:'n-contract',credentialSetId:'ledger-contract'};
+  const registry={[l.credentialSetId]:{companyId:'company-a',provider:'notify',environment:'test',purpose:'ledger',workspaceId:l.workspaceId,secretBinding:'PAY_NOTIFY_TEST_LEDGER_CONTRACT'}};
+  const app=new PayApplication({...vaultEnv(db),PAY_EXTERNAL_ACTIONS_ENABLED:'true',PAY_LEDGER_REGISTRY_JSON:JSON.stringify(registry),PAY_NOTIFY_TEST_LEDGER_CONTRACT:'contract-ledger-fixture'});
   const authority={check:async()=>true};
   const ok=async(command:Parameters<typeof app.dispatch>[0])=>{const response=await app.dispatch(command,authority);if(!response.ok)throw Error('Pay rejected '+command.action+': '+response.error.code);return response.result;};
   for(const value of [await ok({action:'capabilities',scope:self,connection:c,ledger:l}),await ok({action:'capabilities',scope:self})])expect(contract.parseCapabilities(value)).toEqual(value);
@@ -145,11 +146,12 @@ describe('published wire contract parsers accept what Pay returns (real D1, no p
 });
 
 describe('checkout return registry (pay-contract 0.2.0, real D1, no provider or ledger calls)',()=>{
- const c={...connection,id:'p-return',credentialSetId:'toss-return'},l={...ledger,integrationId:'n-return',credentialSetId:'ledger-return'};
- const registry={[c.credentialSetId]:{companyId:'company-a',provider:'toss',environment:'test',purpose:'payment',providerAccountId:c.providerAccountId,secretBinding:'PAY_TOSS_TEST_SECRET_RETURN',clientKeyBinding:'PAY_TOSS_TEST_CLIENT_RETURN'},[l.credentialSetId]:{companyId:'company-a',provider:'notify',environment:'test',purpose:'ledger',workspaceId:l.workspaceId,secretBinding:'PAY_NOTIFY_TEST_LEDGER_RETURN'}};
- const env={PAY_EXTERNAL_ACTIONS_ENABLED:'true',PAY_CREDENTIAL_REGISTRY_JSON:JSON.stringify(registry),PAY_TOSS_TEST_SECRET_RETURN:'test_sk_returnfixture',PAY_TOSS_TEST_CLIENT_RETURN:'test_ck_returnfixture',PAY_NOTIFY_TEST_LEDGER_RETURN:'return-ledger-fixture'};
+ let c:ConnectionSnapshot;const l={...ledger,integrationId:'n-return',credentialSetId:'ledger-return'};
+ beforeAll(async()=>{c=(await registerConnection(db,'company-a',connection.providerAccountId,'Return1')).connection;});
+ const registry={[l.credentialSetId]:{companyId:'company-a',provider:'notify',environment:'test',purpose:'ledger',workspaceId:l.workspaceId,secretBinding:'PAY_NOTIFY_TEST_LEDGER_RETURN'}};
+ const env={PAY_EXTERNAL_ACTIONS_ENABLED:'true',PAY_LEDGER_REGISTRY_JSON:JSON.stringify(registry),PAY_NOTIFY_TEST_LEDGER_RETURN:'return-ledger-fixture'};
  const authority={check:async()=>true};
- async function app(){const {PayApplication}=await import('../src/service');return new PayApplication({DB:db,...env});}
+ async function app(){const {PayApplication}=await import('../src/service');return new PayApplication({...vaultEnv(db),...env});}
  async function order(key:string,scope:PayScope=self){const a=await app(),r=await a.dispatch({action:'createOrder',scope,operationId:key,supplyKrw:1000,connection:c,ledger:l},authority);if(!r.ok)throw Error('createOrder '+r.error.code);return (r.result as {id:string}).id;}
  const nonces=async(id:string)=>db.prepare('SELECT COUNT(*) AS n FROM checkout_nonces WHERE order_id=?').bind(id).first<number>('n');
  it('saves the chosen registry entry and builds only the registry redirect from the capture',async()=>{

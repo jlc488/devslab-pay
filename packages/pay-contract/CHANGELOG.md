@@ -2,6 +2,26 @@
 
 All notable changes to `@devslab-kr/pay-contract`. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow the wire rules in the README (breaking wire change = major).
 
+## 0.3.0 — unreleased
+
+Additive. Every 0.2.0 command, response and helper keeps its shape and meaning.
+
+### Added
+
+- Company Toss test accounts registered from Admin: commands `connectionState`, `connectConnection {merchantId, clientKey, secretKey}` and `revokeConnection {connectionId}` (all need `access: 'company'`; the two writes also need the effect authority). Results `PaymentConnectionState` and `PaymentConnectionView` carry the MID, the last 4 characters of the client key and a fingerprint, never a key.
+- `PAYMENT_CONNECTION_STATUSES` (`active`, `superseded`, `revoked`), `TOSS_TEST_CLIENT_KEY_PATTERN`/`TOSS_TEST_SECRET_KEY_PATTERN` (test keys only; `live_*`, `test_gck_`, `test_gsk_` refused), `TOSS_MERCHANT_ID_PATTERN`, `PAYMENT_CONNECTION_ID_PATTERN` (`pcv_` + 32 hex), the `is*` guards and the parsers `parsePaymentConnectionView`/`parsePaymentConnectionState`.
+- Error codes `payment_credentials_invalid` (400: Toss refused the key, nothing stored) and `payment_connection_conflict` (409).
+
+### Changed (Pay behaviour, same wire shapes)
+
+- `ConnectionSnapshot.credentialSetId` is now the connection version ID Pay returned (`pcv_…`) and `providerAccountId` its MID. Pay resolves payment keys only from its connection vault; `PAY_CREDENTIAL_REGISTRY_JSON` is retired. A snapshot naming an old registry ID fails closed (`payment_unavailable`).
+- New orders and readiness need the active version; an existing order's checkout and confirmation also finish under a superseded version; lookup reconcile and refund also run under a revoked version.
+
+### Migration notes for Admin
+
+- Deploy Pay (migration 0003 and the `pay-connection-master-key` secret) before Admin sends the connection commands.
+- Store the returned `id` as the payment assignment's `credentialSetId` and `merchantId` as its `providerAccountId`.
+
 ## 0.2.0 — unreleased
 
 Additive. Every 0.1.0 command, response and helper keeps its shape and meaning; a 0.1.0 caller compiles and runs unchanged.
