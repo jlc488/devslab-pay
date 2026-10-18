@@ -374,6 +374,7 @@
   .dl-pay-connection-form { grid-template-columns: minmax(0, 1fr); }
   .dl-pay-facts--wide > div { grid-template-columns: 7rem minmax(0, 1fr); }
   .dl-pay-history-row__line { grid-template-columns: 4.5rem auto minmax(0, 1fr); }
-  .dl-pay-history-row__line time { grid-column: 1 / -1; }
+  .dl-pay-history-row__line time { grid-column: 2 / -1; }
   .dl-pay-history-row__action { grid-column: 1 / -1; justify-self: start; }
+  .dl-pay-history-row__action:empty { display: none; }
 }
