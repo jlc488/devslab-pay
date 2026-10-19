@@ -8,7 +8,8 @@ import { Button } from "@devslab/dds-react";
 export type Loadable<T> =
   | { status: "loading" }
   | { status: "unavailable"; message: ReactNode }
-  | { status: "error"; message: ReactNode; onRetry?: () => void }
+  /** `retrying` (since 0.3.0): the retry the user pressed is running, so 다시 조회 shows progress and cannot be pressed again. */
+  | { status: "error"; message: ReactNode; onRetry?: () => void; retrying?: boolean }
   | { status: "ready"; data: T };
 
 /** Notice for the `unavailable` and `error` states. */
@@ -17,7 +18,7 @@ export function StateNotice({ state }: { state: Extract<Loadable<unknown>, { sta
   return (
     <div className="dl-pay-notice dl-pay-notice--error" role="alert">
       <p>{state.message}</p>
-      {state.onRetry && <Button tone="secondary" size="sm" onClick={state.onRetry}>다시 조회</Button>}
+      {state.onRetry && <Button tone="secondary" size="sm" loading={state.retrying === true} onClick={state.onRetry}>다시 조회</Button>}
     </div>
   );
 }

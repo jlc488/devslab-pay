@@ -73,12 +73,24 @@
 
 .dl-pay-skeleton {
   display: inline-block;
+  max-inline-size: 100%;
   vertical-align: middle;
 }
 
 .dl-pay-skeleton--short { inline-size: 4em; }
 .dl-pay-skeleton--medium { inline-size: 6em; }
 .dl-pay-skeleton--long { inline-size: 10em; }
+
+/* A result next to the control that caused it (a refused key, an older page that did not load). The line is
+ * always there, empty or not, so nothing below moves when a message comes or goes. */
+.dl-pay-result {
+  flex: 1 1 24ch;
+  min-inline-size: 0;
+  min-block-size: var(--dds-typo-body-2-line-height);
+  color: var(--dds-color-status-danger);
+  font-size: var(--dds-typo-body-2-font-size);
+  line-height: var(--dds-typo-body-2-line-height);
+}
 
 .dl-pay-mono {
   font-family: var(--dds-font-family-mono);
@@ -158,6 +170,11 @@
 
 .dl-pay-table .dds-btn {
   white-space: nowrap;
+}
+
+/* Room for the "주문 보기" spinner, so the columns do not jump while one order loads. */
+.dl-pay-table .dl-pay-select {
+  inline-size: 7.5rem;
 }
 
 .dl-pay-time {
@@ -261,25 +278,6 @@
   border-block-start: 1px solid var(--dds-color-border-default);
 }
 
-.dl-pay-inline-error,
-.dl-pay-inline-notice {
-  margin: 0;
-  padding: var(--dds-space-12) var(--dds-space-16);
-  border: 1px solid var(--dds-color-border-default);
-  border-radius: var(--dds-radius-md);
-  font-size: var(--dds-typo-body-2-font-size);
-  line-height: var(--dds-typo-body-2-line-height);
-}
-
-.dl-pay-inline-error {
-  border-color: var(--dds-color-status-danger);
-  background: var(--dds-color-status-danger-bg);
-}
-
-.dl-pay-inline-notice {
-  background: var(--dds-color-bg-subtle);
-}
-
 .dl-pay-facts--wide > div {
   grid-template-columns: 8rem minmax(0, 1fr);
 }
@@ -307,6 +305,20 @@
 .dl-pay-connection-form__actions {
   grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dds-space-8) var(--dds-space-16);
+}
+
+/* Stands in for a button (revoke, submit) while the first load runs: the same height and about the width of the
+ * labels it stands for, so nothing moves when the data comes. */
+.dl-pay-skeleton-button {
+  inline-size: 6.5rem;
+  block-size: var(--dds-space-40);
+}
+
+@media (pointer: coarse) {
+  .dl-pay-skeleton-button { block-size: 44px; }
 }
 
 .dl-pay-confirm {
@@ -372,6 +384,9 @@
 
 @container (max-width: 640px) {
   .dl-pay-connection-form { grid-template-columns: minmax(0, 1fr); }
+  /* Narrow: the result line sits under the submit button whatever the button's width, so the first-load
+   * skeleton and either label ("연결하고 확인", "새 키로 교체") wrap the same way and the form keeps its height. */
+  .dl-pay-connection-form__actions > .dl-pay-result { flex-basis: 100%; }
   .dl-pay-facts--wide > div { grid-template-columns: 7rem minmax(0, 1fr); }
   .dl-pay-history-row__line { grid-template-columns: 4.5rem auto minmax(0, 1fr); }
   .dl-pay-history-row__line time { grid-column: 2 / -1; }
