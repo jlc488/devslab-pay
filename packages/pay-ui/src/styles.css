@@ -81,6 +81,35 @@
 .dl-pay-skeleton--medium { inline-size: 6em; }
 .dl-pay-skeleton--long { inline-size: 10em; }
 
+/* A skeleton stand-in built from the real control's own classes (a pill, a 주문 보기 button), so it has that control's
+ * exact size; only the paint is a skeleton's (since 0.3.1). */
+.dl-pay-ghost {
+  pointer-events: none;
+  user-select: none;
+  border-color: transparent;
+  color: transparent;
+  background: var(--dds-color-overlay-pressed-tint);
+  animation: dds-skeleton-pulse 1600ms var(--dds-motion-easing-standard) infinite;
+}
+
+.dl-pay-ghost--pill { inline-size: 5.5em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dl-pay-ghost { animation: none; }
+}
+
+/* A button that can show progress keeps the spinner's room while idle (since 0.3.1): it is as wide idle as working,
+ * so nothing beside or below it moves, and no row rewraps, when it spins. DDS Button loading puts a 16px spinner and
+ * the button's 8px gap before the label; idle, two 4px pseudo-elements and the two 8px gaps they open add the same
+ * 24px, split around the centred label. Apps can put the class on their own buttons in this package's slots
+ * (the history's actions, OrderSummary children). */
+.dl-pay-spinner-room:not([aria-busy="true"])::before,
+.dl-pay-spinner-room:not([aria-busy="true"])::after {
+  content: "";
+  flex: none;
+  inline-size: calc((var(--dds-space-16) - var(--dds-space-8)) / 2);
+}
+
 /* A result next to the control that caused it (a refused key, an older page that did not load). The line is
  * always there, empty or not, so nothing below moves when a message comes or goes. */
 .dl-pay-result {
@@ -163,6 +192,33 @@
   border-radius: var(--dds-radius-md);
 }
 
+/* Fixed column widths (since 0.3.1): the first-load skeleton, the loaded rows, a row whose 주문 보기 spins and any
+ * order values put every column edge in the same place. Each width follows the text its column holds: the cells'
+ * .875rem (DDS table) as this table's em, or the 13px label of pills and buttons, plus the cell's 16px padding on
+ * both sides. 주문 보기 is always as wide as while it spins (dl-pay-spinner-room). The order number takes what is
+ * left and ends with an ellipsis (the full number is its title); below the sum, the table scrolls inside its frame. */
+.dl-pay-table {
+  --dl-pay-cell-pad: calc(2 * var(--dds-space-16));
+  --dl-pay-w-time: calc(10.75em + var(--dl-pay-cell-pad));
+  --dl-pay-w-state: calc(9.75 * var(--dds-typo-label-font-size) + var(--dl-pay-cell-pad));
+  --dl-pay-w-amount: calc(6em + var(--dl-pay-cell-pad));
+  --dl-pay-w-id: calc(8 * var(--dds-typo-caption-font-size) + var(--dl-pay-cell-pad));
+  /* label + the --sm button's padding and border + the spinner's room */
+  --dl-pay-w-select: calc(4.25 * var(--dds-typo-label-font-size) + 2 * var(--dds-space-12) + 2px + var(--dds-space-16) + var(--dds-space-8) + var(--dl-pay-cell-pad));
+  table-layout: fixed;
+  font-size: .875rem;
+  min-inline-size: calc(var(--dl-pay-w-time) + var(--dl-pay-w-state) + 3 * var(--dl-pay-w-amount) + var(--dl-pay-w-id));
+}
+
+.dl-pay-table--select {
+  min-inline-size: calc(var(--dl-pay-w-time) + var(--dl-pay-w-state) + 3 * var(--dl-pay-w-amount) + var(--dl-pay-w-id) + var(--dl-pay-w-select));
+}
+
+.dl-pay-col-time { inline-size: var(--dl-pay-w-time); }
+.dl-pay-col-state { inline-size: var(--dl-pay-w-state); }
+.dl-pay-col-amount { inline-size: var(--dl-pay-w-amount); }
+.dl-pay-col-select { inline-size: var(--dl-pay-w-select); }
+
 .dl-pay-table td,
 .dl-pay-table th {
   word-break: normal;
@@ -172,18 +228,13 @@
   white-space: nowrap;
 }
 
-/* Room for the "주문 보기" spinner, so the columns do not jump while one order loads. */
-.dl-pay-table .dl-pay-select {
-  inline-size: 7.5rem;
-}
-
 .dl-pay-time {
   font-variant-numeric: tabular-nums;
 }
 
 .dl-pay-id {
   display: inline-block;
-  max-inline-size: 14rem;
+  max-inline-size: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: bottom;
@@ -315,6 +366,11 @@
 .dl-pay-skeleton-button {
   inline-size: 6.5rem;
   block-size: var(--dds-space-40);
+}
+
+/* The submit button keeps its spinner's room (dl-pay-spinner-room, since 0.3.1), so its stand-in does too. */
+.dl-pay-connection-form__actions > .dl-pay-skeleton-button {
+  inline-size: calc(6.5rem + var(--dds-space-16) + var(--dds-space-8));
 }
 
 @media (pointer: coarse) {

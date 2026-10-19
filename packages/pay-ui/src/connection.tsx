@@ -110,13 +110,14 @@ function confirmCopy(pending: PaymentConnectionRevokeRequest) {
 function Confirm({ pending, busy, actions }: { pending: PaymentConnectionRevokeRequest; busy: PaymentConnectionBusy; actions: PaymentConnectionActions }) {
   const copy = confirmCopy(pending);
   const id = useId();
-  // Any running action locks both buttons (a connect must not overlap a revoke); only the revoke itself spins.
+  // Any running action locks both buttons (a connect must not overlap a revoke); only the revoke itself spins, keeping
+  // its idle width (dl-pay-spinner-room) so 취소 beside it does not move.
   return (
     <div className="dl-pay-confirm" role="group" aria-labelledby={id}>
       <p id={id}><strong>{copy.title}</strong></p>
       <p>{copy.body}</p>
       <div className="dl-pay-actions">
-        <Button tone="danger" loading={busy === "confirm"} disabled={busy !== null} onClick={() => void actions.confirm()}>{copy.action}</Button>
+        <Button tone="danger" className="dl-pay-spinner-room" loading={busy === "confirm"} disabled={busy !== null} onClick={() => void actions.confirm()}>{copy.action}</Button>
         <Button tone="secondary" disabled={busy !== null} onClick={actions.cancel}>취소</Button>
       </div>
     </div>
@@ -156,7 +157,7 @@ export function PaymentConnectionView({ snapshot, ready, actions, notReadyText =
   else if (!data) summary = (
     <div className="dl-pay-notice dl-pay-notice--error" role="alert">
       <p>{loadError ?? "결제 연결 정보를 확인하지 못했습니다."}</p>
-      <Button tone="secondary" size="sm" loading={busy === "load"} disabled={working} onClick={() => void actions.load()}>다시 조회</Button>
+      <Button tone="secondary" size="sm" className="dl-pay-spinner-room" loading={busy === "load"} disabled={working} onClick={() => void actions.load()}>다시 조회</Button>
     </div>
   );
   else summary = (
@@ -211,7 +212,7 @@ export function PaymentConnectionView({ snapshot, ready, actions, notReadyText =
             <div className="dl-pay-connection-form__actions">
               {skeleton
                 ? <span className="dds-skeleton dl-pay-skeleton-button" aria-hidden="true" />
-                : <Button type="submit" loading={busy === "connect"} disabled={!actions.canSubmit || working}>{active ? "새 키로 교체" : "연결하고 확인"}</Button>}
+                : <Button type="submit" className="dl-pay-spinner-room" loading={busy === "connect"} disabled={!actions.canSubmit || working}>{active ? "새 키로 교체" : "연결하고 확인"}</Button>}
               <div className="dl-pay-result" role="alert">{formResult}</div>
             </div>
           </form>

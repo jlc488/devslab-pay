@@ -109,6 +109,22 @@ describe("OrderHistory", () => {
     const retry = screen.getByRole("button", { name: "다시 조회" }) as HTMLButtonElement;
     expect(retry.getAttribute("aria-busy")).toBe("true"); expect(retry.disabled).toBe(true);
   });
+  it("locks 다시 조회 while another action of the app runs, so pressing it is never silently ignored", async () => {
+    const onRetry = vi.fn();
+    const failed = { status: "error", message: "결제 내역을 확인하지 못했습니다.", onRetry } as const;
+    // The app's other action (for example 최근 충전 요청 확인) runs: a retry now would be ignored, so it cannot be pressed.
+    const { rerender } = render(<OrderHistory state={{ ...failed, retryDisabled: true }} />);
+    const retry = screen.getByRole("button", { name: "다시 조회" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(true);
+    expect(retry.getAttribute("aria-busy")).toBeNull();
+    await userEvent.click(retry);
+    expect(onRetry).not.toHaveBeenCalled();
+    // That action is over: the same button works again.
+    rerender(<OrderHistory state={{ ...failed, retryDisabled: false }} />);
+    expect(retry.disabled).toBe(false);
+    await userEvent.click(retry);
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
 });
 
 describe("OrderSummary and TestWalletSummary", () => {

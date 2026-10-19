@@ -10,7 +10,7 @@ The components only render what they are given and report what the user did. The
 |---|---|---|
 | `RechargeAmount` | `value` (text), `onChange`, `label?`, `disabled?`, `maxSupplyKrw?` (an app ceiling below Pay's) | The supply-amount field (1,000원 이상 · 1,000원 단위 · 최대 1,000,000원 since 0.2.0) with the balance / VAT / total breakdown beside it, computed with the contract's `calculateOrderRecharge`. Pass `disabled={action.busy}` while the app's submit runs |
 | `RechargeBreakdown` | `amounts` or `null` | The three-line breakdown on its own; rows keep a dash while the amount is invalid |
-| `OrderHistory` | `state: Loadable<{ items; nextCursor }>`, `onSelect?(order)`, `onLoadMore?(cursor)`, `busy?` (locks the buttons), `loadingMore?`, `selecting?(order)`, `loadMoreError?` (0.3.0), `title?`, `actions?` (buttons beside the title), `emptyText?` | Orders with state pills, supply / VAT / total, order number, "주문 보기" and "이전 결제 내역 더 보기". Progress shows only on the button whose request runs; a failed older page is explained beside its button while the rows already shown stay |
+| `OrderHistory` | `state: Loadable<{ items; nextCursor }>`, `onSelect?(order)`, `onLoadMore?(cursor)`, `busy?` (locks the buttons), `loadingMore?`, `selecting?(order)`, `loadMoreError?` (0.3.0), `title?`, `actions?` (buttons beside the title), `emptyText?` | Orders with state pills, supply / VAT / total, order number, "주문 보기" and "이전 결제 내역 더 보기". Progress shows only on the button whose request runs; a failed older page is explained beside its button while the rows already shown stay. The columns have fixed widths (0.3.1), so the first-load skeleton, the loaded rows and a spinning row share every column edge and row height; the order number takes the remaining width and ends with an ellipsis (full number in its title) |
 | `OrderSummary` | `order`, `title?`, `children` (the app's buttons) | One order: state, order number, the amount split and a do-not-pay-again note while it settles |
 | `TestWalletSummary` | `wallet: TestWallet`, `title?` | Test balance, amount held for refunds, refunded total |
 | `PaymentConnectionView` (0.2.0, reworked in 0.3.0) | `snapshot` (`data`, `loading`, `busy` action key, typed fields, `pending` revoke request), `ready`, `actions` (load, set fields, connect, ask, cancel, confirm), `notReadyText?`, `formNote?`, `summaryExtra?`, `loadError?`, `formResult?` | The company's Toss **test** account: summary (MID, client-key hint, version), connect/replace form (MID, client key, secret key on one grid row), version history with revoke and a confirm step. States that live payments are not possible and the 1,000,000원 per-order maximum. While the first load runs, the form (fields locked) and history are drawn at their real size. The app owns the requests and clears the typed keys before it sends them |
@@ -22,7 +22,7 @@ The components only render what they are given and report what the user did. The
 type Loadable<T> =
   | { status: "loading" }                                          // same frame with skeleton rows
   | { status: "unavailable"; message: ReactNode }                   // not set up or not permitted; the app words it
-  | { status: "error"; message: ReactNode; onRetry?: () => void; retrying?: boolean } // the request failed; optional retry button, spinning while `retrying`
+  | { status: "error"; message: ReactNode; onRetry?: () => void; retrying?: boolean; retryDisabled?: boolean } // the request failed; optional retry button, spinning while `retrying`, locked while `retryDisabled` (0.3.1)
   | { status: "ready"; data: T };
 ```
 
@@ -48,9 +48,16 @@ const load = usePendingAction<"load" | "sync">();
   formResult={keyRefused}   // a result caused by what was typed, beside (narrow: under) the submit button
 />
 
-const list = usePendingAction<"refresh" | "more" | `select:${string}`>();
+const list = usePendingAction<"refresh" | "retry" | "more" | `select:${string}`>();
 <OrderHistory
-  state={state}
+  state={failed
+    ? {
+        status: "error", message: failed, onRetry: retry,
+        retrying: list.is("retry"),                     // the retry the user pressed runs: 다시 조회 spins
+        retryDisabled: list.busy && !list.is("retry"),  // another list action runs: 다시 조회 is locked (0.3.1)
+      }
+    : state}
+  actions={<Button tone="secondary" className="dl-pay-spinner-room" loading={list.is("refresh")} disabled={list.busy} onClick={refresh}>새로고침</Button>}
   busy={list.busy}
   loadingMore={list.is("more")}
   selecting={(order) => list.is(`select:${order.id}`)}
@@ -62,6 +69,8 @@ const list = usePendingAction<"refresh" | "more" | `select:${string}`>();
 
 - `PaymentConnectionView` spins `"load"` on 다시 조회, `"connect"` on the submit button and `"confirm"` on the confirm step's revoke button. Any other key (`"platform"`, `"reapply"`, a reload nobody pressed such as `"sync"`) only locks the view; the app gives its own slot buttons `loading={act.is(...)}`.
 - `actions.load`, `connect` and `confirm` handle their own failures and never reject; the view only starts them.
+- A `Loadable` error with `onRetry` takes `retrying` (the retry runs) and, since 0.3.1, `retryDisabled` (another action of the same `usePendingAction` runs). Without `retryDisabled`, 다시 조회 looks pressable while `run` would ignore the press.
+- Every button of the package that can spin keeps the spinner's room while idle (class `dl-pay-spinner-room`, since 0.3.1): it is as wide idle as working, so nothing beside or below it moves and no row rewraps when it spins. Give the class to your own DDS Buttons in the slots (`OrderHistory` `actions`, `OrderSummary` children) when they show progress.
 - Results of an action (connected, revoked, a server failure) go to the app's toast feedback. Only results that belong next to their cause go in the slots: `loadError`, `formResult` and `loadMoreError` sit on lines that are always reserved, so nothing moves when a message comes or goes. Pass plain text; the view supplies the alert role.
 - `aria-busy` marks a region only while its data loads (`loading`, `loadingMore`), not while some other action runs.
 
@@ -81,7 +90,7 @@ Every class is prefixed `dl-pay-*` and every value is a DDS token. Tables, badge
 Published to GitHub Packages (see the [pay-contract README](../pay-contract/README.md) for `.npmrc` and the token):
 
 ```sh
-npm install --save-exact @devslab-kr/pay-ui@0.3.0 @devslab-kr/pay-contract@0.3.0
+npm install --save-exact @devslab-kr/pay-ui@0.3.1 @devslab-kr/pay-contract@0.3.0
 ```
 
 Peer dependencies: `react` 19 and `@devslab/dds-react` ^0.23.0 (the version the apps render; the tests run against 0.23.0). The package ships compiled ESM with declarations and `dist/styles.css`.

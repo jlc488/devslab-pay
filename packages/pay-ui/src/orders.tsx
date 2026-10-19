@@ -47,8 +47,14 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
         : page && page.items.length === 0 ? <div className="dl-pay-notice"><p>{emptyText}</p></div>
           : (
             <div className="dds-table-wrap dl-pay-table-wrap">
-              <table className="dds-table dl-pay-table">
+              {/* Fixed column widths: the skeleton, the loaded rows and a row whose 주문 보기 spins share every column edge. */}
+              <table className={onSelect ? "dds-table dl-pay-table dl-pay-table--select" : "dds-table dl-pay-table"}>
                 <caption className="dds-visually-hidden">결제 내역</caption>
+                <colgroup>
+                  <col className="dl-pay-col-time" /><col className="dl-pay-col-state" />
+                  <col className="dl-pay-col-amount" /><col className="dl-pay-col-amount" /><col className="dl-pay-col-amount" />
+                  <col />{onSelect && <col className="dl-pay-col-select" />}
+                </colgroup>
                 <thead>
                   <tr>
                     <th scope="col">주문 일시 (KST)</th>
@@ -62,11 +68,13 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
                 </thead>
                 <tbody>
                   {!page
+                    // Skeleton rows hold a pill and a 주문 보기 of the real size, so they are as tall as the rows that replace them.
                     ? [0, 1, 2].map((key) => (
                       <tr key={key} aria-hidden="true">
-                        <td><SkeletonText size="long" /></td><td><SkeletonText size="short" /></td>
+                        <td><SkeletonText size="long" /></td><td><span className="dds-badge dl-pay-ghost dl-pay-ghost--pill">{"\u00a0"}</span></td>
                         <td data-numeric=""><SkeletonText size="short" /></td><td data-numeric=""><SkeletonText size="short" /></td><td data-numeric=""><SkeletonText size="short" /></td>
-                        <td><SkeletonText size="long" /></td>{onSelect && <td className="dl-pay-select" />}
+                        <td><SkeletonText size="long" /></td>
+                        {onSelect && <td className="dl-pay-select"><span className="dds-btn dds-btn--secondary dds-btn--sm dl-pay-spinner-room dl-pay-ghost">주문 보기</span></td>}
                       </tr>
                     ))
                     : page.items.map((order) => (
@@ -77,7 +85,7 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
                         <td data-numeric="">{formatKrw(order.vatKrw)}</td>
                         <td data-numeric="">{formatKrw(order.totalKrw)}</td>
                         <td><span className="dl-pay-id" title={order.orderId}>{order.orderId}</span></td>
-                        {onSelect && <td className="dl-pay-select"><Button tone="secondary" size="sm" loading={selecting?.(order) ?? false} disabled={busy} onClick={() => onSelect(order)}>주문 보기</Button></td>}
+                        {onSelect && <td className="dl-pay-select"><Button tone="secondary" size="sm" className="dl-pay-spinner-room" loading={selecting?.(order) ?? false} disabled={busy} onClick={() => onSelect(order)}>주문 보기</Button></td>}
                       </tr>
                     ))}
                 </tbody>
@@ -86,7 +94,7 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
           )}
       {page?.nextCursor && onLoadMore && (
         <div className="dl-pay-actions">
-          <Button tone="secondary" loading={loadingMore} disabled={busy} onClick={() => onLoadMore(page.nextCursor!)}>이전 결제 내역 더 보기</Button>
+          <Button tone="secondary" className="dl-pay-spinner-room" loading={loadingMore} disabled={busy} onClick={() => onLoadMore(page.nextCursor!)}>이전 결제 내역 더 보기</Button>
           <div className="dl-pay-result" role="alert">{loadMoreError}</div>
         </div>
       )}

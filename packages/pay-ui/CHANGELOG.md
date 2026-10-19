@@ -2,6 +2,34 @@
 
 All notable changes to `@devslab-kr/pay-ui`. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.3.1 — 2026-10-20
+
+Nothing moves while an action runs, and the order history's first-load skeleton has the loaded table's columns and row height. Measured with Admin's and Contract's own stylesheets at 1280 and 390px (and with a touch pointer): every column edge, row height, box height and button edge is the same before and during progress. Additive: `Loadable` error `retryDisabled` and the class `dl-pay-spinner-room`; the apps need no change to get the fixes.
+
+### Fixed
+
+- `OrderHistory`: while one row's "주문 보기" spun, the other columns moved 2–10px. The 0.3.0 room for the spinner (`7.5rem` on the column) was in root units and narrower than the spinning button (98px) plus the cell padding. "주문 보기" now keeps the spinner's room while idle, so every row's button is the same width spinning or not and their right edges line up, and the columns have fixed widths (see Changed).
+- `OrderHistory` first load: the skeleton put column edges up to 62px from where the loaded rows put them, and its rows were 42px against the loaded 43px (53px against 53px is now also true with a touch pointer), so the table jumped when the data came. Skeleton rows now hold a pill and a "주문 보기" built from the real controls' classes and painted as skeletons, in the same fixed columns. The "이전 결제 내역 더 보기" line still appears only once the data says there is an older page.
+- 다시 조회 (`Loadable` error and `PaymentConnectionView`'s failed load), "이전 결제 내역 더 보기", the connect/replace submit button and the confirm step's revoke button grew 24px (16px spinner + 8px gap) when they spun. The notice rewrapped and grew (Admin at 390px: 58→90px, 66→110px with a two-line message), the result line beside the buttons moved 24px and 취소 shifted right 24px. They now keep the spinner's room while idle.
+- A `Loadable` error's 다시 조회 stayed pressable while another action of the app ran, and the press was ignored (`usePendingAction.run` does not start a second action): a silent no-op. Apps can now lock it with `retryDisabled`.
+
+### Changed
+
+- `OrderHistory` columns have fixed widths that follow the text each column holds: the cells' `.875rem` (DDS table) for dates and amounts, the 13px label for state pills and "주문 보기", never root units alone. The order number takes the remaining width and ends with an ellipsis (the full number is its title) instead of stopping at `14rem`. Below the sum of the columns (about 955px with "주문 보기", at default font settings) the table scrolls inside its frame, as before. New classes on the `<col>` elements: `dl-pay-col-time`, `dl-pay-col-state`, `dl-pay-col-amount`, `dl-pay-col-select`; the table carries `dl-pay-table--select` when `onSelect` is given.
+- The package's buttons that can spin are 24px wider while idle (the spinner's room). The submit button's first-load stand-in is 24px wider to match.
+
+### Added
+
+- `Loadable` error state `retryDisabled`: 다시 조회 is disabled, without progress, while another action of the app runs. Wire it as `retryDisabled: list.busy && !list.is("retry")`.
+- Class `dl-pay-spinner-room` for a DDS `Button` that shows progress: it keeps the spinner's room while idle. Every button of the package that can spin uses it; apps can give it to their own buttons in this package's slots (`OrderHistory` `actions`, `OrderSummary` children).
+- Classes `dl-pay-ghost` (a skeleton stand-in built from a real control's classes) and `dl-pay-ghost--pill`.
+
+### Migration
+
+- Optional for both apps. Where an `OrderHistory` error state shares its `usePendingAction` with other actions, pass `retryDisabled` (Admin payments: `history.busy && !history.is('retry')`; Contract checkout: `action.busy && !action.is('retry')`, and drop the comment that says 0.3.0 cannot lock the button).
+- Own buttons that spin in the package's slots (Admin 내역 새로고침, Contract 테스트 결제 진행 and 주문 결과 다시 확인): add `className="dl-pay-spinner-room"` so they keep their width too.
+- Nothing else: no prop or class the apps use was removed. The `dl-pay-select` cells stay; only their `7.5rem` width is gone.
+
 ## 0.3.0 — 2026-10-20
 
 Progress shows only on the button whose action runs, every other control is locked meanwhile, and action results move to the app's toast feedback. Breaking for `PaymentConnectionView` (before 1.0 a breaking change moves the minor digit); `OrderHistory` and `Loadable` changes are additive. Requires `@devslab/dds-react` 0.23.
