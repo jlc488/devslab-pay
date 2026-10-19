@@ -310,9 +310,10 @@
   gap: var(--dds-space-8) var(--dds-space-16);
 }
 
-/* Stands in for a button (revoke, submit) while the first load runs: the same height, so nothing moves when the data comes. */
+/* Stands in for a button (revoke, submit) while the first load runs: the same height and about the width of the
+ * labels it stands for, so nothing moves when the data comes. */
 .dl-pay-skeleton-button {
-  inline-size: 8rem;
+  inline-size: 6.5rem;
   block-size: var(--dds-space-40);
 }
 
@@ -383,6 +384,9 @@
 
 @container (max-width: 640px) {
   .dl-pay-connection-form { grid-template-columns: minmax(0, 1fr); }
+  /* Narrow: the result line sits under the submit button whatever the button's width, so the first-load
+   * skeleton and either label ("연결하고 확인", "새 키로 교체") wrap the same way and the form keeps its height. */
+  .dl-pay-connection-form__actions > .dl-pay-result { flex-basis: 100%; }
   .dl-pay-facts--wide > div { grid-template-columns: 7rem minmax(0, 1fr); }
   .dl-pay-history-row__line { grid-template-columns: 4.5rem auto minmax(0, 1fr); }
   .dl-pay-history-row__line time { grid-column: 2 / -1; }

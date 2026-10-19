@@ -45,7 +45,7 @@ const load = usePendingAction<"load" | "sync">();
   ready={ready}
   actions={actions}
   loadError={loadError}     // why the load failed, shown once next to 다시 조회
-  formResult={keyRefused}   // a result caused by what was typed, beside the submit button
+  formResult={keyRefused}   // a result caused by what was typed, beside (narrow: under) the submit button
 />
 
 const list = usePendingAction<"refresh" | "more" | `select:${string}`>();

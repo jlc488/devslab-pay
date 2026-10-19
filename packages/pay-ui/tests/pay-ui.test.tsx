@@ -173,21 +173,34 @@ describe("PaymentConnectionView", () => {
   });
   it("shows progress only on the button whose action runs and locks every other control meanwhile", () => {
     const revokingOld = { kind: "revoke", connectionId: old.id, version: 1, status: "superseded" } as const;
-    // The confirm step is open while the form is filled in, so every button of the view is on screen at once.
-    const screenWith = (busy: PaymentConnectionSnapshot["busy"]) =>
-      <PaymentConnectionView snapshot={{ ...base, ...typed, pending: revokingOld, busy }} ready actions={actions({ canSubmit: true })} />;
-    const { rerender } = render(screenWith(null));
-    for (const button of screen.getAllByRole("button") as HTMLButtonElement[]) { expect(button.disabled).toBe(false); expect(button.getAttribute("aria-busy")).toBeNull(); }
-    // App-only keys ("platform", "reapply") and reloads nobody pressed ("sync") lock the view without spinning its buttons.
-    for (const [busy, spinning] of [["connect", "새 키로 교체"], ["confirm", "이 버전 해제"], ["platform", null], ["reapply", null], ["sync", null]] as const) {
-      rerender(screenWith(busy));
-      const buttons = screen.getAllByRole("button") as HTMLButtonElement[];
-      expect(buttons.map((button) => button.textContent).sort()).toEqual(["새 키로 교체", "연결 해제", "이 버전 해제", "취소"].sort());
-      for (const button of buttons) {
-        expect(button.disabled, `${busy}: ${button.textContent}`).toBe(true);
-        expect(button.getAttribute("aria-busy") === "true", `${busy}: ${button.textContent}`).toBe(button.textContent === spinning);
+    const view = () => screen.getByRole("region", { name: "결제 연결" }).parentElement!;
+    // Two screens put every button of the view on screen, with the form filled in: one with the confirm step open
+    // (its revoke and 취소), one without it (the ask buttons 연결 해제 and the older version's 이 버전 해제).
+    const screens = [
+      { pending: revokingOld, names: ["새 키로 교체", "연결 해제", "이 버전 해제", "취소"], confirmSpins: "이 버전 해제" },
+      { pending: null, names: ["새 키로 교체", "연결 해제", "이 버전 해제"], confirmSpins: null },
+    ];
+    for (const { pending, names, confirmSpins } of screens) {
+      const screenWith = (busy: PaymentConnectionSnapshot["busy"]) =>
+        <PaymentConnectionView snapshot={{ ...base, ...typed, pending, busy }} ready actions={actions({ canSubmit: true })} />;
+      const { rerender, unmount } = render(screenWith(null));
+      for (const button of screen.getAllByRole("button") as HTMLButtonElement[]) { expect(button.disabled).toBe(false); expect(button.getAttribute("aria-busy")).toBeNull(); }
+      // App-only keys ("platform", "reapply") and reloads nobody pressed ("sync", or "load" while data is shown)
+      // lock the view without spinning its buttons.
+      const keys: [PaymentConnectionSnapshot["busy"], string | null][] = [["connect", "새 키로 교체"], ["confirm", confirmSpins], ["load", null], ["platform", null], ["reapply", null], ["sync", null]];
+      for (const [busy, spinning] of keys) {
+        rerender(screenWith(busy));
+        const buttons = screen.getAllByRole("button") as HTMLButtonElement[];
+        expect(buttons.map((button) => button.textContent).sort()).toEqual([...names].sort());
+        for (const button of buttons) {
+          expect(button.disabled, `${busy}: ${button.textContent}`).toBe(true);
+          expect(button.getAttribute("aria-busy") === "true", `${busy}: ${button.textContent}`).toBe(button.textContent === spinning);
+        }
+        for (const label of fields) expect((screen.getByLabelText(label) as HTMLInputElement).disabled).toBe(true);
+        // An action is not the data loading: the view as a whole is not announced as busy.
+        expect(view().getAttribute("aria-busy"), `${busy}: view`).not.toBe("true");
       }
-      for (const label of fields) expect((screen.getByLabelText(label) as HTMLInputElement).disabled).toBe(true);
+      unmount();
     }
   });
   it("shows a refused key beside the submit button, on a line that is there before the result comes", () => {
@@ -201,6 +214,8 @@ describe("PaymentConnectionView", () => {
   });
   it("draws the form and history while the first load runs and fills them in place", () => {
     const { rerender } = render(<PaymentConnectionView snapshot={{ ...base, data: null, loading: true }} ready actions={actions({ canSubmit: true })} />);
+    const view = screen.getByRole("region", { name: "결제 연결" }).parentElement!;
+    expect(view.getAttribute("aria-busy")).toBe("true");
     expect(screen.getByRole("status").textContent).toContain("불러오고");
     const inputs = fields.map((label) => screen.getByLabelText(label) as HTMLInputElement);
     for (const input of inputs) expect(input.disabled).toBe(true);
@@ -211,6 +226,7 @@ describe("PaymentConnectionView", () => {
     fields.forEach((label, index) => expect(screen.getByLabelText(label)).toBe(inputs[index]));
     for (const input of inputs) expect(input.disabled).toBe(false);
     expect(screen.queryByRole("status")).toBeNull();
+    expect(view.getAttribute("aria-busy")).not.toBe("true");
   });
   it("says once why the load failed, next to 다시 조회, and spins it only for the retry", async () => {
     const load = vi.fn();

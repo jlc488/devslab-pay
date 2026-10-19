@@ -18,7 +18,7 @@ Progress shows only on the button whose action runs, every other control is lock
 
 ### Added
 
-- `PaymentConnectionView` props `loadError` (why the load failed, stated once next to 다시 조회) and `formResult` (a result caused by what was typed, such as Toss refusing the keys, beside the submit button on an always-reserved line). Both get the alert role from the view.
+- `PaymentConnectionView` props `loadError` (why the load failed, stated once next to 다시 조회) and `formResult` (a result caused by what was typed, such as Toss refusing the keys, beside the submit button on an always-reserved line; under the button once the form is one column wide, so the form keeps its height whatever the button's label or the first-load skeleton's width). Both get the alert role from the view.
 - `OrderHistory` props `loadingMore` (the load-more button spins), `selecting(order)` (only that row's "주문 보기" spins) and `loadMoreError` (why the older page did not load, beside its button on an always-reserved line; the rows already shown stay). `busy` keeps its meaning: lock the buttons.
 - `Loadable` error state `retrying`: 다시 조회 spins and cannot be pressed again while the retry runs.
 - Types `PaymentConnectionBusy` and `PaymentConnectionRevokeRequest`; classes `dl-pay-result`, `dl-pay-skeleton-button` and `dl-pay-select`.

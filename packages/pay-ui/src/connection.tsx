@@ -64,7 +64,8 @@ export type PaymentConnectionViewProps = {
   loadError?: ReactNode;
   /**
    * A result caused by what was typed, for example Toss refusing the keys (since 0.3.0). Shown beside the
-   * submit button on a line that is always reserved, so nothing moves when it comes or goes. Plain text or
+   * submit button (under it once the form is one column wide) on a line that is always reserved, so nothing
+   * moves when it comes or goes, nor when the data replaces the first-load skeleton. Plain text or
    * inline content: the view supplies the alert role. Other results (connected, revoked, server failures)
    * belong in the app's toast feedback.
    */
