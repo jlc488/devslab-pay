@@ -67,10 +67,10 @@ const list = usePendingAction<"refresh" | "retry" | "more" | `select:${string}`>
 />
 ```
 
-- `PaymentConnectionView` spins `"load"` on 다시 조회, `"connect"` on the submit button and `"confirm"` on the confirm step's revoke button. Any other key (`"platform"`, `"reapply"`, a reload nobody pressed such as `"sync"`) only locks the view; the app gives its own slot buttons `loading={act.is(...)}`.
+- `PaymentConnectionView` spins `"load"` on 다시 조회, `"connect"` on the submit button and `"confirm"` on the confirm step's revoke button. Any other key (`"platform"`, `"reapply"`, a reload nobody pressed such as `"sync"`) only locks the view; the app gives its own slot buttons (`formNote`, `summaryExtra`) `loading={act.is(...)}` and `className="dl-pay-spinner-room"`.
 - `actions.load`, `connect` and `confirm` handle their own failures and never reject; the view only starts them.
 - A `Loadable` error with `onRetry` takes `retrying` (the retry runs) and, since 0.3.1, `retryDisabled` (another action of the same `usePendingAction` runs). Without `retryDisabled`, 다시 조회 looks pressable while `run` would ignore the press.
-- Every button of the package that can spin keeps the spinner's room while idle (class `dl-pay-spinner-room`, since 0.3.1): it is as wide idle as working, so nothing beside or below it moves and no row rewraps when it spins. Give the class to your own DDS Buttons in the slots (`OrderHistory` `actions`, `OrderSummary` children) when they show progress.
+- Every button of the package that can spin keeps the spinner's room while idle (class `dl-pay-spinner-room`, since 0.3.1): it is as wide idle as working, so nothing beside or below it moves and no row rewraps when it spins. Give the class to your own DDS Buttons in the slots (`OrderHistory` `actions`, `OrderSummary` children, `PaymentConnectionView` `formNote` and `summaryExtra`) when they show progress.
 - Results of an action (connected, revoked, a server failure) go to the app's toast feedback. Only results that belong next to their cause go in the slots: `loadError`, `formResult` and `loadMoreError` sit on lines that are always reserved, so nothing moves when a message comes or goes. Pass plain text; the view supplies the alert role.
 - `aria-busy` marks a region only while its data loads (`loading`, `loadingMore`), not while some other action runs.
 

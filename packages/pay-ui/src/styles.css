@@ -98,11 +98,18 @@
   .dl-pay-ghost { animation: none; }
 }
 
+/* Contrast themes (forced colors) repaint text and borders in system colours, so the transparent label and border
+ * would draw an inert 주문 보기 in every skeleton row. There the ghost keeps its room and draws nothing, like the
+ * DDS skeleton bars beside it, whose tint the theme also takes away. */
+@media (forced-colors: active) {
+  .dl-pay-ghost { visibility: hidden; }
+}
+
 /* A button that can show progress keeps the spinner's room while idle (since 0.3.1): it is as wide idle as working,
  * so nothing beside or below it moves, and no row rewraps, when it spins. DDS Button loading puts a 16px spinner and
  * the button's 8px gap before the label; idle, two 4px pseudo-elements and the two 8px gaps they open add the same
  * 24px, split around the centred label. Apps can put the class on their own buttons in this package's slots
- * (the history's actions, OrderSummary children). */
+ * (the history's actions, OrderSummary children, PaymentConnectionView formNote and summaryExtra). */
 .dl-pay-spinner-room:not([aria-busy="true"])::before,
 .dl-pay-spinner-room:not([aria-busy="true"])::after {
   content: "";

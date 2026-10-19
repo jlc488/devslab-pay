@@ -9,7 +9,7 @@ Nothing moves while an action runs, and the order history's first-load skeleton 
 ### Fixed
 
 - `OrderHistory`: while one row's "주문 보기" spun, the other columns moved 2–10px. The 0.3.0 room for the spinner (`7.5rem` on the column) was in root units and narrower than the spinning button (98px) plus the cell padding. "주문 보기" now keeps the spinner's room while idle, so every row's button is the same width spinning or not and their right edges line up, and the columns have fixed widths (see Changed).
-- `OrderHistory` first load: the skeleton put column edges up to 62px from where the loaded rows put them, and its rows were 42px against the loaded 43px (53px against 53px is now also true with a touch pointer), so the table jumped when the data came. Skeleton rows now hold a pill and a "주문 보기" built from the real controls' classes and painted as skeletons, in the same fixed columns. The "이전 결제 내역 더 보기" line still appears only once the data says there is an older page.
+- `OrderHistory` first load: the skeleton put column edges up to 62px from where the loaded rows put them, and its rows were 42px against the loaded 43px (53px against 53px is now also true with a touch pointer), so the table jumped when the data came. Skeleton rows now hold a pill and a "주문 보기" built from the real controls' classes and painted as skeletons, in the same fixed columns. In a contrast theme (forced colors), which would repaint their transparent label and border, these stand-ins keep their room and draw nothing, like the DDS skeleton bars, instead of an inert "주문 보기" in every row. The "이전 결제 내역 더 보기" line still appears only once the data says there is an older page.
 - 다시 조회 (`Loadable` error and `PaymentConnectionView`'s failed load), "이전 결제 내역 더 보기", the connect/replace submit button and the confirm step's revoke button grew 24px (16px spinner + 8px gap) when they spun. The notice rewrapped and grew (Admin at 390px: 58→90px, 66→110px with a two-line message), the result line beside the buttons moved 24px and 취소 shifted right 24px. They now keep the spinner's room while idle.
 - A `Loadable` error's 다시 조회 stayed pressable while another action of the app ran, and the press was ignored (`usePendingAction.run` does not start a second action): a silent no-op. Apps can now lock it with `retryDisabled`.
 
@@ -21,13 +21,13 @@ Nothing moves while an action runs, and the order history's first-load skeleton 
 ### Added
 
 - `Loadable` error state `retryDisabled`: 다시 조회 is disabled, without progress, while another action of the app runs. Wire it as `retryDisabled: list.busy && !list.is("retry")`.
-- Class `dl-pay-spinner-room` for a DDS `Button` that shows progress: it keeps the spinner's room while idle. Every button of the package that can spin uses it; apps can give it to their own buttons in this package's slots (`OrderHistory` `actions`, `OrderSummary` children).
+- Class `dl-pay-spinner-room` for a DDS `Button` that shows progress: it keeps the spinner's room while idle. Every button of the package that can spin uses it; apps can give it to their own buttons in this package's slots (`OrderHistory` `actions`, `OrderSummary` children, `PaymentConnectionView` `formNote` and `summaryExtra`).
 - Classes `dl-pay-ghost` (a skeleton stand-in built from a real control's classes) and `dl-pay-ghost--pill`.
 
 ### Migration
 
 - Optional for both apps. Where an `OrderHistory` error state shares its `usePendingAction` with other actions, pass `retryDisabled` (Admin payments: `history.busy && !history.is('retry')`; Contract checkout: `action.busy && !action.is('retry')`, and drop the comment that says 0.3.0 cannot lock the button).
-- Own buttons that spin in the package's slots (Admin 내역 새로고침, Contract 테스트 결제 진행 and 주문 결과 다시 확인): add `className="dl-pay-spinner-room"` so they keep their width too.
+- Own buttons that spin in the package's slots: add `className="dl-pay-spinner-room"` so they keep their width too. Admin: 내역 새로고침 (`OrderHistory` `actions`), "DevsLab 테스트 계정으로 연결" (`PaymentConnectionView` `formNote`) and "현재 연결 적용" (`summaryExtra`). Contract: 테스트 결제 진행 and 주문 결과 다시 확인 (`OrderSummary` children).
 - Nothing else: no prop or class the apps use was removed. The `dl-pay-select` cells stay; only their `7.5rem` width is gone.
 
 ## 0.3.0 — 2026-10-20
