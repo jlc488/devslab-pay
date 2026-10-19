@@ -2,7 +2,7 @@
 
 All notable changes to `@devslab-kr/pay-ui`. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-10-20
 
 Progress shows only on the button whose action runs, every other control is locked meanwhile, and action results move to the app's toast feedback. Breaking for `PaymentConnectionView` (before 1.0 a breaking change moves the minor digit); `OrderHistory` and `Loadable` changes are additive. Requires `@devslab/dds-react` 0.23.
 
