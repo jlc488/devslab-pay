@@ -15,7 +15,17 @@ export type OrderHistoryProps<T extends OrderRow> = {
   onSelect?: (order: T) => void;
   /** Called with `nextCursor`; the app appends the older page to `items`. Omit to hide the button. */
   onLoadMore?: (cursor: string) => void;
+  /** Locks "주문 보기" and the load-more button while any of the app's actions runs (for example `action.busy`). Shows no progress by itself. */
   busy?: boolean;
+  /** The older page is loading: the load-more button shows progress (since 0.3.0). */
+  loadingMore?: boolean;
+  /** True for the order whose "주문 보기" is loading it, so only that row's button shows progress (since 0.3.0). */
+  selecting?: (order: T) => boolean;
+  /**
+   * Why the older page did not load, beside the load-more button on a line that is always reserved (since 0.3.0).
+   * The rows already shown stay. Plain text or inline content: the view supplies the alert role.
+   */
+  loadMoreError?: ReactNode;
   title?: ReactNode;
   /** Buttons beside the title (for example the app's refresh). */
   actions?: ReactNode;
@@ -23,11 +33,12 @@ export type OrderHistoryProps<T extends OrderRow> = {
 };
 
 /** Recharge orders, newest first, with state pills and the VAT split. */
-export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, busy = false, title = "결제 내역", actions, emptyText = "아직 결제 내역이 없습니다." }: OrderHistoryProps<T>) {
+export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, busy = false, loadingMore = false, selecting, loadMoreError, title = "결제 내역", actions, emptyText = "아직 결제 내역이 없습니다." }: OrderHistoryProps<T>) {
   const id = useId();
   const page = state.status === "ready" ? state.data : null;
+  // Busy only while the list itself changes; another action of the app (busy) does not make the rows stale.
   return (
-    <section className="dl-pay-section" aria-labelledby={`${id}-title`} aria-busy={state.status === "loading" || busy}>
+    <section className="dl-pay-section" aria-labelledby={`${id}-title`} aria-busy={state.status === "loading" || loadingMore}>
       <div className="dl-pay-head">
         <h2 id={`${id}-title`} className="dl-pay-title">{title}</h2>
         {actions && <div className="dl-pay-actions">{actions}</div>}
@@ -46,7 +57,7 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
                     <th scope="col" data-numeric="">부가세</th>
                     <th scope="col" data-numeric="">결제 금액</th>
                     <th scope="col">주문 번호</th>
-                    {onSelect && <th scope="col"><span className="dds-visually-hidden">상세</span></th>}
+                    {onSelect && <th scope="col" className="dl-pay-select"><span className="dds-visually-hidden">상세</span></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -55,7 +66,7 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
                       <tr key={key} aria-hidden="true">
                         <td><SkeletonText size="long" /></td><td><SkeletonText size="short" /></td>
                         <td data-numeric=""><SkeletonText size="short" /></td><td data-numeric=""><SkeletonText size="short" /></td><td data-numeric=""><SkeletonText size="short" /></td>
-                        <td><SkeletonText size="long" /></td>{onSelect && <td />}
+                        <td><SkeletonText size="long" /></td>{onSelect && <td className="dl-pay-select" />}
                       </tr>
                     ))
                     : page.items.map((order) => (
@@ -66,7 +77,7 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
                         <td data-numeric="">{formatKrw(order.vatKrw)}</td>
                         <td data-numeric="">{formatKrw(order.totalKrw)}</td>
                         <td><span className="dl-pay-id" title={order.orderId}>{order.orderId}</span></td>
-                        {onSelect && <td><Button tone="secondary" size="sm" disabled={busy} onClick={() => onSelect(order)}>주문 보기</Button></td>}
+                        {onSelect && <td className="dl-pay-select"><Button tone="secondary" size="sm" loading={selecting?.(order) ?? false} disabled={busy} onClick={() => onSelect(order)}>주문 보기</Button></td>}
                       </tr>
                     ))}
                 </tbody>
@@ -75,7 +86,8 @@ export function OrderHistory<T extends OrderRow>({ state, onSelect, onLoadMore, 
           )}
       {page?.nextCursor && onLoadMore && (
         <div className="dl-pay-actions">
-          <Button tone="secondary" disabled={busy} onClick={() => onLoadMore(page.nextCursor!)}>이전 결제 내역 더 보기</Button>
+          <Button tone="secondary" loading={loadingMore} disabled={busy} onClick={() => onLoadMore(page.nextCursor!)}>이전 결제 내역 더 보기</Button>
+          <div className="dl-pay-result" role="alert">{loadMoreError}</div>
         </div>
       )}
     </section>

@@ -8,5 +8,6 @@ export {
 } from "./orders.js";
 export {
   PaymentConnectionView, PaymentConnectionStatusPill, paymentConnectionProblem, isPaymentConnectionInput, maskedClientKeyHint,
-  type PaymentConnectionSnapshot, type PaymentConnectionActions, type PaymentConnectionPendingAction, type PaymentConnectionViewProps,
+  type PaymentConnectionSnapshot, type PaymentConnectionActions, type PaymentConnectionViewProps,
+  type PaymentConnectionBusy, type PaymentConnectionRevokeRequest, type PaymentConnectionPendingAction,
 } from "./connection.js";
