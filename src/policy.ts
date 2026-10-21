@@ -1,7 +1,8 @@
+import {fetchPublicPolicyBundle} from '../vendor/admin-policy-client/index.mjs';
 import type {PublicPolicy} from '@devslab-kr/pay-contract';
 import {object,exactKeys,invalid,utc} from './domain';
 import {boundedJson} from './http';
-export interface PolicyEnv {ADMIN_POLICIES?:{fetch(request:Request):Promise<Response>};PAY_POLICIES_ENABLED?:string}
+export interface PolicyEnv {POLICY_V3_ENABLED?:string;ADMIN_POLICIES?:{fetch(request:Request):Promise<Response>};PAY_POLICIES_ENABLED?:string}
 const slugs=['terms','privacy','refund','service'] as const;
 function plain(value:unknown,max:number,empty=false):string{if(typeof value!=='string'||value.length>max||(!empty&&!value.trim())||/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value))throw invalid();return value;}
 export function validatePolicy(value:unknown,slug:PublicPolicy['slug']):PublicPolicy{
@@ -34,9 +35,9 @@ function validateEnvelope(value:unknown,slug:PublicPolicy['slug'],requested?:str
  return {requestedLocale,locale,fallback:v.fallback,settingsRevision:revision(v.settingsRevision),defaultLocale,supportedLocales,document:validatePolicy(v.document,slug),translation:{sourceLocale:'ko',sourceRevision,currentSourceRevision,needsUpdate:t.needsUpdate}};
 }
 function escape(value:string):string{return value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));}
-function render(envelope:PolicyEnvelope){
+function render(envelope:PolicyEnvelope,bundleId?:string,supplementNeedsUpdate=false){
  const policy=envelope.document;
- return '<!doctype html><html lang="'+escape(envelope.locale)+'"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+escape(policy.title)+'</title><main><h1>'+escape(policy.title)+'</h1><nav aria-label="Policy language">'+envelope.supportedLocales.map(locale=>'<a href="/'+policy.slug+'?lang='+encodeURIComponent(locale)+'" lang="'+escape(locale)+'"'+(locale===envelope.locale?' aria-current="page"':'')+'>'+escape(locale)+'</a>').join(' · ')+'</nav><p>Default language: '+escape(envelope.defaultLocale)+' · Requested language: '+escape(envelope.requestedLocale)+' · Showing '+escape(envelope.locale)+(envelope.fallback?' (fallback)':'')+'</p>'+(envelope.translation.needsUpdate?'<p role="status">Translation needs update: reviewed Korean revision '+envelope.translation.sourceRevision+'; current Korean revision '+envelope.translation.currentSourceRevision+'.</p>':'')+'<p style="white-space:pre-wrap">'+escape(policy.description)+'</p>'+policy.sections.map(s=>'<section><h2>'+escape(s.title)+'</h2>'+s.paragraphs.map(p=>'<p style="white-space:pre-wrap">'+escape(p)+'</p>').join('')+'</section>').join('')+'<footer>Published '+escape(policy.publishedAt.slice(0,10))+' · Effective '+escape(policy.effectiveAt)+' · Revision '+policy.revision+'</footer></main></html>';
+ return '<!doctype html><html lang="'+escape(envelope.locale)+'"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+escape(policy.title)+'</title><main'+(bundleId?' data-policy-bundle="'+escape(bundleId)+'" data-policy-service="pay" data-policy-locale="'+escape(envelope.locale)+'"':'')+'><h1>'+escape(policy.title)+'</h1><nav aria-label="Policy language">'+envelope.supportedLocales.map(locale=>'<a href="/'+policy.slug+'?lang='+encodeURIComponent(locale)+'" lang="'+escape(locale)+'"'+(locale===envelope.locale?' aria-current="page"':'')+'>'+escape(locale)+'</a>').join(' · ')+'</nav><p>Default language: '+escape(envelope.defaultLocale)+' · Requested language: '+escape(envelope.requestedLocale)+' · Showing '+escape(envelope.locale)+(envelope.fallback?' (fallback)':'')+'</p>'+(supplementNeedsUpdate?'<p role="status">Service supplement translation needs review.</p>':'')+(envelope.translation.needsUpdate?'<p role="status">Translation needs update: reviewed Korean revision '+envelope.translation.sourceRevision+'; current Korean revision '+envelope.translation.currentSourceRevision+'.</p>':'')+'<p style="white-space:pre-wrap">'+escape(policy.description)+'</p>'+policy.sections.map(s=>'<section><h2>'+escape(s.title)+'</h2>'+s.paragraphs.map(p=>'<p style="white-space:pre-wrap">'+escape(p)+'</p>').join('')+'</section>').join('')+'<footer>Published '+escape(policy.publishedAt.slice(0,10))+' · Effective '+escape(policy.effectiveAt)+' · Revision '+policy.revision+'</footer></main></html>';
 }
 const headers={'cache-control':'no-store','content-type':'text/html; charset=utf-8','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",'referrer-policy':'no-referrer'};
 async function fetchEnvelope(env:PolicyEnv,slug:PublicPolicy['slug'],requested?:string):Promise<PolicyEnvelope>{
@@ -64,6 +65,13 @@ export async function publicFetch(request:Request,env:PolicyEnv):Promise<Respons
   if(!env.ADMIN_POLICIES&&env.PAY_POLICIES_ENABLED!=='true')throw invalid();
   const languages=url.searchParams.getAll('lang');if(languages.length>1)throw invalid();
   const requested=languages.length?canonicalLocale(languages[0]):undefined;
+  if(env.POLICY_V3_ENABLED==='true'){
+   try{
+    const bundle=await fetchPublicPolicyBundle({serviceId:'pay',groupId:'devslab',slug,...(requested?{requestedLocale:requested}:{}),fetcher:(input,init)=>env.ADMIN_POLICIES?env.ADMIN_POLICIES.fetch(new Request(input,init)):fetch(input,init)});
+    body=render({requestedLocale:bundle.requestedLocale,locale:bundle.locale,fallback:bundle.fallback,settingsRevision:0,defaultLocale:bundle.defaultLocale,supportedLocales:bundle.supportedLocales,document:{...bundle.document,site:'pay',slug,revision:bundle.bundle.revision,publishedAt:bundle.bundle.publishedAt},translation:{sourceLocale:'ko',sourceRevision:bundle.sources.common.sourceRevision,currentSourceRevision:bundle.sources.common.currentSourceRevision,needsUpdate:bundle.sources.common.needsUpdate}},bundle.bundle.id,bundle.sources.supplement?.needsUpdate??false);
+    return new Response(request.method==='HEAD'?null:body,{headers});
+   }catch{ /* Preserve existing published policy until the v3 rollout is ready. */ }
+  }
   body=render(await fetchEnvelope(env,slug,requested));status=200;
  }catch{}
  return new Response(request.method==='HEAD'?null:body,{status,headers});

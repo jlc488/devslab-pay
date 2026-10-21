@@ -1,0 +1,13 @@
+{
+  "name": "devslab-public-policy-client",
+  "schemaVersion": 3,
+  "source": "devslab-admin/packages/admin-contract/src/policy-client.ts",
+  "sha256": {
+    "index.mjs": "94bc89b2c5c867527deef822e087c834ab2359d153c1fe48e53770b92052dffd",
+    "index.d.mts": "214a44526dac3c8dddcdb847e300d3f14b496413bf71014c37f47ddbd2b346d7",
+    "policy-v3.d.ts": "66333c0ccb1e1a77b61edc46d3ec19b1848682b6ba2b2a36b7a2a6f214dc3262",
+    "policy.d.ts": "f9d490477377eb5f57789eb6c295a869ec4b6f886e76f56e7ab6c6151b6d816c",
+    "internal.d.ts": "a40d21cb2fe564880b0e629f8a9d6238f6ed8d24f7e7033ff35727bdd71336a6",
+    "errors.d.ts": "a72bf7a36441019c012ca7d14a65db0cdbf1749edfff8c059cf4e8b5201e0b9c"
+  }
+}
